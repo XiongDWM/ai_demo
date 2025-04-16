@@ -47,7 +47,7 @@ public class CacheHandler {
 
     public<K,V> void setCertainValueToCache(String name, K key, V value) {
         LRUCache<K, V> cache = getCache(name);
-        if(null==cache)throw new IllegalArgumentException("caache with name "+name+" not found");
+        if(null==cache)throw new IllegalArgumentException("cache with name "+name+" not found");
         cache.put(key, value);
     }
     

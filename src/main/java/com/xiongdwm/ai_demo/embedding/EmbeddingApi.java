@@ -1,11 +1,14 @@
 package com.xiongdwm.ai_demo.embedding;
 
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingResponse;
+import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +26,7 @@ public class EmbeddingApi {
     @GetMapping("/doc/embedding")
     public EmbeddingResponse getEmbedding(@RequestParam("text") String text) {
         EmbeddingResponse embeddingResponse = this.embeddingModel.embedForResponse(List.of(text));
+        System.out.println("demension" + embeddingResponse.getResults().get(0).getOutput().length);
         return embeddingResponse;
     }
 
@@ -31,6 +35,21 @@ public class EmbeddingApi {
         Document doc = new Document(text);
         vectorStore.add(List.of(doc));
         return "Stored successfully!";
+    }
+
+    @PostMapping("/doc/search")
+    public List<Document> searchDocument(@RequestParam("input")String input){
+        EmbeddingResponse embeddingResponse = this.embeddingModel.embedForResponse(List.of(input));
+        System.out.println("demension: " + embeddingResponse.getResults().get(0).getOutput().length);
+        System.out.println("====================================================================");
+        // float[] embedding = embeddingResponse.getResults().get(0).getOutput();
+
+        List<Document> results = vectorStore.similaritySearch(SearchRequest.builder()
+        .query(input)
+        .topK(1) 
+        .build());
+        return results;
+
     }
 
 }
