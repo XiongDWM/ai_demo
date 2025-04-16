@@ -24,7 +24,7 @@ public class AiVectorizeProcessor implements BeanPostProcessor {
         StringBuilder description = new StringBuilder();
         description.append("###").append(entityAnnotation.name()).append("\n")
                    .append(entityAnnotation.description())
-                   .append(", properties are as follows:\n");
+                   .append("\n");
 
         for (Field field : clazz.getDeclaredFields()) {
             if (field.isAnnotationPresent(AiVectorize.class)) {

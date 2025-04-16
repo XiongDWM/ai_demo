@@ -5,7 +5,7 @@ import com.xiongdwm.ai_demo.embedding.annotaion.AiVectorize;
 import jakarta.persistence.Table;
 
 @Table(name = "test_entity")
-@AiVectorize(name = "entity for software testing(test_entity)",description = "test record store in this table",type = AiVectorize.AiVectorizeType.ENTITY)
+@AiVectorize(name = "entity for software testing(test_entity)",description = "test record store in this table, properties are as follows:",type = AiVectorize.AiVectorizeType.ENTITY)
 public class TestEntity {
     @AiVectorize(name = "id",description = "primary key for test, auto increment",type = AiVectorize.AiVectorizeType.FIELDS)
     private Long id;
