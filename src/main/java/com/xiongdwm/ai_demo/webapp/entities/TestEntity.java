@@ -5,11 +5,11 @@ import com.xiongdwm.ai_demo.embedding.annotaion.AiVectorize;
 import jakarta.persistence.Table;
 
 @Table(name = "test_entity")
-@AiVectorize(name = "test",description = "entity for software testing",type = AiVectorize.AiVectorizeType.ENTITY)
+@AiVectorize(name = "entity for software testing(test_entity)",description = "test record store in this table",type = AiVectorize.AiVectorizeType.ENTITY)
 public class TestEntity {
-    @AiVectorize(name = "id",description = "primary key for test",type = AiVectorize.AiVectorizeType.FIELDS)
+    @AiVectorize(name = "id",description = "primary key for test, auto increment",type = AiVectorize.AiVectorizeType.FIELDS)
     private Long id;
-    @AiVectorize(name = "name",description = "name for test",type = AiVectorize.AiVectorizeType.FIELDS)
+    @AiVectorize(name = "name",description = "name for test, used for identification",type = AiVectorize.AiVectorizeType.FIELDS)
     private String name;
     
     
