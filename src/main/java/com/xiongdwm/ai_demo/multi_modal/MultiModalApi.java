@@ -1,6 +1,7 @@
 package com.xiongdwm.ai_demo.multi_modal;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.List;
 
 import org.springframework.ai.chat.messages.UserMessage;
@@ -20,6 +21,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.xiongdwm.ai_demo.utils.cache.CacheHandler;
 import com.xiongdwm.ai_demo.utils.cache.LRUCache;
+import com.xiongdwm.ai_demo.utils.global.ApiResponse;
 
 import org.springframework.ai.chat.model.ChatResponse;
 
@@ -67,23 +69,26 @@ public class MultiModalApi {
         String imagePath = uploadPath + File.separator + name;
         FileSystemResource resource = new FileSystemResource(imagePath);
         var promptText="##The user provides a picture and you need to extract the text in the picture. You will only respond with Chinese and English characters.\n"+
-        "##The text in the picture formatted from left to right and in multiple lines.\n"+
+        "##The text in the picture is formatted from top to bottom, and within each line, from left to right.\n"+
         "##You must not classify them by language.\n"+
         "##You must extract each character in the original order.\n"+
         "##Ignore all line breaks in the extracted text and respond with a single continuous string.\n"+
+        "##If the text in the picture cannot be recognized, respond with '无法识别'.\n"+
         "##Do not answer with any explanation, imagination or translation.\n"+
         "##Respond with only the extracted text. -- just the extracted text.\n";
         var userMessage=new UserMessage(
             promptText,
         List.of(new Media(MimeTypeUtils.IMAGE_JPEG,resource)));
         StringBuilder fullAnswerBuilder = new StringBuilder();
-        Flux<ChatResponse> stream = model.stream(new Prompt(userMessage,ChatOptions.builder().model("minicpm-v:8b").build()));  // ChatOptions.builder().model(OllamaModel.LLAVA.getName()).build()
+        Flux<ChatResponse> stream = model.stream(new Prompt(userMessage,ChatOptions.builder().model("minicpm-v:8b")
+                .temperature(0.1)
+                .maxTokens(4096)
+                .build())); 
         return stream.map(chatResp -> chatResp.getResult().getOutput().getText().trim())
                 .doOnNext(chunk -> {
                     fullAnswerBuilder.append(chunk);
                 })
                 .doOnComplete(() -> {
-                    // 在流完成后存储完整的问答
                     String fullAnswer = fullAnswerBuilder.toString();
                     if (!fullAnswer.isEmpty()) {
                         cache.put(name, fullAnswer);
@@ -93,13 +98,9 @@ public class MultiModalApi {
 
     // 上传图片 存储到本地
     @GetMapping("/picture/upload")
-    public String uploadPicture(@RequestParam("file") MultipartFile file) {
-        try {
-            String filePath = uploadPath + File.separator + file.getOriginalFilename();
-            file.transferTo(new File(filePath));
-            return "File uploaded successfully: " + filePath;
-        } catch (Exception e) {
-            return "File upload failed: " + e.getMessage();
-        }
+    public ApiResponse<String> uploadPicture(@RequestParam("file") MultipartFile file) throws IllegalStateException, IOException {
+        String filePath = uploadPath + File.separator + file.getOriginalFilename();
+        file.transferTo(new File(filePath));
+        return ApiResponse.success("File uploaded successfully: " + filePath);
     }
 }

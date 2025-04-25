@@ -36,13 +36,13 @@ public class AiVectorizeProcessor implements BeanPostProcessor {
 
         return description.toString();
     }
-    // public static void main(String[] args) {
-    //     AiVectorize entityAnnotation = TestEntity.class.getAnnotation(AiVectorize.class);
-    //     if (entityAnnotation != null) {
-    //         String description = new AiVectorizeProcessor().generateFullDescription(TestEntity.class, entityAnnotation);
-    //         System.out.println(description);
-    //     } else {
-    //         System.out.println("No AiVectorize annotation found on TestEntity.");
-    //     }
-    // }
+    public static void main(String[] args) {
+        AiVectorize entityAnnotation = TestEntity.class.getAnnotation(AiVectorize.class);
+        if (entityAnnotation != null) {
+            String description = new AiVectorizeProcessor().generateFullDescription(TestEntity.class, entityAnnotation);
+            System.out.println(description);
+        } else {
+            System.out.println("No AiVectorize annotation found on TestEntity.");
+        }
+    }
 }
