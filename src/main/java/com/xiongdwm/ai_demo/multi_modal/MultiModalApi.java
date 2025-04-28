@@ -96,11 +96,12 @@ public class MultiModalApi {
                 });
     }   
 
-    // 上传图片 存储到本地
     @GetMapping("/picture/upload")
     public ApiResponse<String> uploadPicture(@RequestParam("file") MultipartFile file) throws IllegalStateException, IOException {
         String filePath = uploadPath + File.separator + file.getOriginalFilename();
         file.transferTo(new File(filePath));
         return ApiResponse.success("File uploaded successfully: " + filePath);
     }
+
+
 }

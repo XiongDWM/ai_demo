@@ -20,7 +20,23 @@ public class TestEntity {
     @AiVectorize(name = "name",description = "name for test, used for identification",type = AiVectorize.AiVectorizeType.FIELDS)
     @Column(name = "name")
     private String name; 
-    
+    @AiVectorize(name = "type",description = "type for test, used for classify, there has 3 types of test: test, production and unknown",type = AiVectorize.AiVectorizeType.FIELDS)
+    @Column(name = "type")
+    private TestEntityType type;
+
+    public enum TestEntityType {
+        TEST("test"),
+        PRODUCTION("production"),
+        UNKNOWN("unknown");
+
+        private final String label;
+        TestEntityType(String label) {
+            this.label = label;
+        }
+        public String getLabel() {
+            return label;
+        }
+    }
     
 
     public Long getId() {
@@ -37,5 +53,11 @@ public class TestEntity {
 
     public void setName(String name) {
         this.name = name;
+    }
+    public TestEntityType getType() {
+        return type;
+    }
+    public void setType(TestEntityType type) {
+        this.type = type;
     }
 }

@@ -2,6 +2,7 @@ package com.xiongdwm.ai_demo.embedding.annotaion;
 
 import java.lang.reflect.Field;
 
+import org.springframework.ai.vectorstore.neo4j.Neo4jVectorStore;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.stereotype.Component;
 
@@ -16,7 +17,6 @@ public class AiVectorizeProcessor implements BeanPostProcessor {
 
     @Override
     public Object postProcessAfterInitialization(Object bean, String beanName) {
-        
         return bean;
     }
 
