@@ -11,8 +11,7 @@ import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.stereotype.Component;
 
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
-import com.xiongdwm.ai_demo.webapp.entities.Fiber;
-import com.xiongdwm.ai_demo.webapp.entities.RoutePoint;
+
 
 import jakarta.annotation.PostConstruct;
 
@@ -46,7 +45,7 @@ public class AiVectorizeProcessor implements BeanPostProcessor {
     @PostConstruct
     public void printAllEntityDescriptions() {
         VectorStore v = vectorStoreFactory.createVectorStore("db_description", "db_description", embeddingModel);
-        Class<?>[] entities = { Fiber.class, RoutePoint.class };
+        Class<?>[] entities = {};
         for (Class<?> clazz : entities) {
             AiVectorize entityAnnotation = clazz.getAnnotation(AiVectorize.class);
             if (entityAnnotation != null) {
@@ -73,15 +72,5 @@ public class AiVectorizeProcessor implements BeanPostProcessor {
         }
 
         return description.toString();
-    }
-
-    public static void main(String[] args) {
-        AiVectorize entityAnnotation = Fiber.class.getAnnotation(AiVectorize.class);
-        if (entityAnnotation != null) {
-            String description = new AiVectorizeProcessor().generateFullDescription(Fiber.class, entityAnnotation);
-            System.out.println(description);
-        } else {
-            System.out.println("No AiVectorize annotation found on Fiber.");
-        }
     }
 }
