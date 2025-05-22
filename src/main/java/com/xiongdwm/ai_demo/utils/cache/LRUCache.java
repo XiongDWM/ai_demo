@@ -7,7 +7,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
-
 public class LRUCache<K, V> {
     private static class CacheEntry<K, V> implements Comparable<CacheEntry<K, V>> {
         K key;
@@ -19,6 +18,7 @@ public class LRUCache<K, V> {
             this.value = value;
             this.expireTime = expireTime;
         }
+
         @Override
         public int compareTo(CacheEntry<K, V> other) {
             return Long.compare(this.expireTime, other.expireTime);
@@ -34,15 +34,15 @@ public class LRUCache<K, V> {
         }
     }
 
-
     private final int capacity;
     private final long expireTimeLimit;
     private final ConcurrentHashMap<K, CacheEntry<K, V>> map;
     private final PriorityQueue<CacheEntry<K, V>> queue;
     private final ReentrantLock lock = new ReentrantLock();
-    private static final long DEFAULT_EXPIRE_TIME = 5*60*1000; // default expire time is 5 minutes
+    private static final long DEFAULT_EXPIRE_TIME = 5 * 60 * 1000; // default expire time is 5 minutes
     private static final int DEFAULT_CAPACITY = 64; // default capacity is 32
     private final ScheduledExecutorService scheduler;
+    private volatile K latest;
 
     // constructors
     public LRUCache() {
@@ -64,7 +64,8 @@ public class LRUCache<K, V> {
         this.queue = new PriorityQueue<>();
 
         this.scheduler = Executors.newScheduledThreadPool(1);
-        scheduler.scheduleAtFixedRate(this::clearExpiredEntries, expireTimeLimit, expireTimeLimit, TimeUnit.MILLISECONDS);
+        scheduler.scheduleAtFixedRate(this::clearExpiredEntries, expireTimeLimit, expireTimeLimit,
+                TimeUnit.MILLISECONDS);
     }
 
     public V get(K key) {
@@ -100,7 +101,20 @@ public class LRUCache<K, V> {
                 }
             }
             map.put(key, entry);
+            latest = key;
             queue.offer(entry);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public Map.Entry<K,V> peek() {
+        lock.lock();
+        try {
+            if (latest == null)
+                return null;
+            CacheEntry<K, V> entry = map.get(latest);
+            return entry == null ? null : new AbstractMap.SimpleEntry<>(entry.key, entry.value);
         } finally {
             lock.unlock();
         }
@@ -109,7 +123,8 @@ public class LRUCache<K, V> {
     public List<V> getAllValues() {
         lock.lock();
         try {
-            if(isEmpty())return Collections.emptyList();
+            if (isEmpty())
+                return Collections.emptyList();
             List<V> values = new ArrayList<>();
             map.forEach((key, entry) -> values.add(entry.value));
             return values;
@@ -117,12 +132,12 @@ public class LRUCache<K, V> {
             lock.unlock();
         }
     }
-    
-    public List<Map.Entry<K,V>> getAllKV() {
+
+    public List<Map.Entry<K, V>> getAllKV() {
         lock.lock();
         try {
-            if(isEmpty())return Collections.emptyList();
-            List<Map.Entry<K,V>> entries = new ArrayList<>();
+            if (isEmpty()) return Collections.emptyList();
+            List<Map.Entry<K, V>> entries = new ArrayList<>();
             map.forEach((key, entry) -> entries.add(new AbstractMap.SimpleEntry<>(entry.key, entry.value)));
             return entries;
         } finally {
@@ -130,14 +145,13 @@ public class LRUCache<K, V> {
         }
     }
 
-
     private void clearExpiredEntries() {
         lock.lock();
         try {
             Iterator<CacheEntry<K, V>> iterator = queue.iterator();
             while (iterator.hasNext()) {
                 CacheEntry<K, V> expiredEntry = iterator.next();
-                if (expiredEntry != null&&System.currentTimeMillis() >= expiredEntry.expireTime) {
+                if (expiredEntry != null && System.currentTimeMillis() >= expiredEntry.expireTime) {
                     iterator.remove();
                     map.remove(expiredEntry.key);
                 }
@@ -147,7 +161,7 @@ public class LRUCache<K, V> {
         }
     }
 
-    public boolean isEmpty(){
+    public boolean isEmpty() {
         return map.isEmpty();
     }
 
@@ -164,7 +178,7 @@ public class LRUCache<K, V> {
     }
 
     // shutdown method to clear the cache and stop the scheduler
-    public void shutdown(){
+    public void shutdown() {
         lock.lock();
         try {
             queue.clear();
@@ -174,9 +188,9 @@ public class LRUCache<K, V> {
             lock.unlock();
         }
     }
-    
+
     public static void main(String[] args) throws InterruptedException {
-        LRUCache<Integer, Integer> cache = new LRUCache<>(2,1000*40);
+        LRUCache<Integer, Integer> cache = new LRUCache<>(2, 1000 * 40);
         cache.put(1, 1);
         cache.put(2, 2);
         System.out.println(cache.map.values());
@@ -189,20 +203,20 @@ public class LRUCache<K, V> {
         }, 30, TimeUnit.SECONDS);
         scheduler.shutdown();
 
-       int capacity=2;
-       LinkedHashMap<String,String>s=new LinkedHashMap<String,String>(capacity,0.75f,true){
-           @Override
-           protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
-               return size()>capacity;
-           }
-       };
-       s.put("a","a");
-       s.put("b","b");
-       System.out.println(s.values());
-       System.out.println(s.get("b"));
-       System.out.println(s.values());
-       s.put("c","c");
-       System.out.println(s);
+        int capacity = 2;
+        LinkedHashMap<String, String> s = new LinkedHashMap<String, String>(capacity, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                return size() > capacity;
+            }
+        };
+        s.put("a", "a");
+        s.put("b", "b");
+        System.out.println(s.values());
+        System.out.println(s.get("b"));
+        System.out.println(s.values());
+        s.put("c", "c");
+        System.out.println(s);
     }
 
 }

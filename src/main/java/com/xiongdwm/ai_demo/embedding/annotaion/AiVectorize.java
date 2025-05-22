@@ -14,7 +14,7 @@ public @interface AiVectorize {
     public enum AiVectorizeType {
         ENTITY("entity_description"),
         FIELDS("entity_description"),
-        SERVICE("question_to_query"),
+        SERVICE("services_list"),
         QUERY("question_to_query"),
         UNKNOWN("NONE");
     

@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import com.xiongdwm.ai_demo.utils.cache.CacheHandler;
 import com.xiongdwm.ai_demo.utils.cache.LRUCache;
 
-import jakarta.annotation.Resource;
+import jakarta.annotation.Resource; 
 
 @Component
 public class ChatContextManager {
@@ -42,9 +42,47 @@ public class ChatContextManager {
         cacheHandler.removeCache(sessionId);
     }
 
+    public String getLatest(String sessionId){
+        LRUCache<String, String> cache = cacheHandler.getCache(sessionId, contextSize,10* 60 * 1000);
+        if(cache.isEmpty()){
+            return null;
+        }
+        var context = cache.peek();
+        if(null==context){
+            return null;
+        }
+        String question = context.getKey();
+        String answer = context.getValue();
+        return "问题：" + question + "\n" + "回答：" + answer + "\n"; 
+    }
+
     public void print(){
         System.out.println("缓存信息："+cacheHandler.toString());
         System.out.println("当前上下文大小：" + contextSize);
+    }
+
+    public List<String> getLatestWithIntents(String chatId) {
+        var intents=List.of(IntentsEnum.values());
+        System.out.println("意图有: "+intents);
+        System.out.println("topic: "+chatId);
+        System.out.println(cacheHandler.toString());
+        return intents.parallelStream().map(intent->{
+            System.out.println("new topic: "+chatId+"-"+intent.getCode());
+            LRUCache<String, String> cache = cacheHandler.getCache(chatId+"-"+intent.getCode());
+            if(cache.isEmpty()){
+                System.out.println(chatId+"-"+intent.getCode()+" is empty");
+                return null;
+            }
+            var context = cache.peek();
+            System.out.println("cache:"+chatId+"-"+intent.getCode() +"->"+context);
+            if(null==context){
+                return null;
+            }
+            String question = context.getKey();
+            String answer = context.getValue();
+            System.out.println("###意图【"+intent.getName()+"】\n" + "###问题：" + question +"\n" + "###回答：" + answer + "\n");
+            return "###意图【"+intent.getName()+"】\n" + "###问题：" + question +"\n " + "###回答：" + answer + "\n"; 
+        }).filter(result -> result != null).toList();
     }
 
 }

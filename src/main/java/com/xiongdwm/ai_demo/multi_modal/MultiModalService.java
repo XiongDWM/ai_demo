@@ -6,8 +6,8 @@ import com.xiongdwm.ai_demo.utils.GeometryUtils;
 
 @Component
 public class MultiModalService {
+    
     public double calAngle(String coordsString){
-        // 解析 top 和 bottom 坐标
         var parts = coordsString.split(";");
         var topCoords = parts[0].replace("top:", "").split(",");                
         var bottomCoords = parts[1].replace("bottom:", "").split(",");
