@@ -35,3 +35,8 @@ out/
 src/main/
 ### VS Code ###
 .vscode/
+
+src/main/java/com/xiongdwm/ai_demo/webapp/entities/*.java
+
+!src/main/java/com/xiongdwm/ai_demo/webapp/entities/FileLog.java
+!src/main/java/com/xiongdwm/ai_demo/webapp/entities/Test.java

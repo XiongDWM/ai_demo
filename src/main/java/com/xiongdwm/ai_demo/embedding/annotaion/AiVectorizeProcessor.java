@@ -2,16 +2,19 @@ package com.xiongdwm.ai_demo.embedding.annotaion;
 
 import java.lang.reflect.Field;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.neo4j.Neo4jVectorStore;
+
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.stereotype.Component;
 
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
-
 
 import jakarta.annotation.PostConstruct;
 
@@ -29,8 +32,7 @@ public class AiVectorizeProcessor implements BeanPostProcessor {
             Float.class, "float",
             String.class, "varchar",
             java.util.Date.class, "datetime",
-            Boolean.class, "tinyint"
-    );
+            Boolean.class, "tinyint");
 
     @Override
     public Object postProcessAfterInitialization(Object bean, String beanName) {
@@ -45,14 +47,22 @@ public class AiVectorizeProcessor implements BeanPostProcessor {
     @PostConstruct
     public void printAllEntityDescriptions() {
         VectorStore v = vectorStoreFactory.createVectorStore("db_description", "db_description", embeddingModel);
-        Class<?>[] entities = {};
-        for (Class<?> clazz : entities) {
-            AiVectorize entityAnnotation = clazz.getAnnotation(AiVectorize.class);
-            if (entityAnnotation != null) {
-                String description = generateFullDescription(clazz, entityAnnotation);
-                // v.delete("'id'>0");
-                // v.add(List.of(new Document(description, Map.of("subdivision", "db_description"))));
-                System.out.println(description);
+        ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
+        scanner.addIncludeFilter(new AnnotationTypeFilter(AiVectorize.class));
+        String basePackage = "com.xiongdwm.ai_demo.webapp.entities"; // Specify your base package
+        Set<BeanDefinition> candidates = scanner.findCandidateComponents(basePackage);
+        for (BeanDefinition bd : candidates) {
+            try {
+                Class<?> clazz = Class.forName(bd.getBeanClassName());
+                AiVectorize entityAnnotation = clazz.getAnnotation(AiVectorize.class);
+                if (entityAnnotation != null) {
+                    String description = generateFullDescription(clazz, entityAnnotation);
+                    // v.delete("'id'>0");
+                    // v.add(List.of(new Document(description, Map.of("subdivision", "db_description"))));
+                    System.out.println(description);
+                }
+            } catch (ClassNotFoundException e) {
+                e.printStackTrace();
             }
         }
     }
