@@ -15,6 +15,8 @@ import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.stereotype.Component;
 
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
+import com.xiongdwm.ai_demo.webapp.entities.Fiber;
+import com.xiongdwm.ai_demo.webapp.entities.RoutePoint;
 
 import jakarta.annotation.PostConstruct;
 
@@ -76,11 +78,22 @@ public class AiVectorizeProcessor implements BeanPostProcessor {
         for (Field field : clazz.getDeclaredFields()) {
             if (field.isAnnotationPresent(AiVectorize.class)) {
                 AiVectorize fieldAnnotation = field.getAnnotation(AiVectorize.class);
+                String fieldType = JAVA_TO_DB_TYPE.get(field.getType());
+                if(field.getType().isEnum())fieldType = "varchar";
                 description.append(" - ").append(fieldAnnotation.name()).append(": ")
+                        .append(fieldType).append(",")
                         .append(fieldAnnotation.description()).append("\n");
             }
         }
 
         return description.toString();
+    }
+
+    public static void main(String[] args) {
+        AiVectorize annotation= RoutePoint.class.getAnnotation(AiVectorize.class);
+        AiVectorizeProcessor processor = new AiVectorizeProcessor();
+        String description = processor.generateFullDescription(Fiber.class, annotation);
+        System.out.println(description);
+       
     }
 }

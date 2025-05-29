@@ -72,7 +72,6 @@ public class WordSplitHelper {
         boolean inBlock = false;
         for (int i = 0; i < rawParagraphs.size(); i++) {
             String line = rawParagraphs.get(i);
-            // 判断是否为标题（如以“：”结尾）
             if (line.endsWith(":") || line.endsWith("：")) {
                 if (currentBlock.length() > 0) {
                     result.add(currentBlock.toString().trim());
@@ -83,14 +82,11 @@ public class WordSplitHelper {
             } else if (inBlock && (line.matches("^\\d+\\.\\s*.*") || line.matches("^\\d+、.*"))) {
                 currentBlock.append(line).append("\n");
             } else if (inBlock) {
-                // 其他内容也追加到当前块
                 currentBlock.append(line).append("\n");
             } else {
-                // 不在块中，单独作为一段
                 result.add(line);
             }
         }
-        // 添加最后一个块
         if (currentBlock.length() > 0) {
             result.add(currentBlock.toString().trim());
         }

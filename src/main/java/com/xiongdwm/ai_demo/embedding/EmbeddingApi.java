@@ -89,10 +89,11 @@ public class EmbeddingApi {
         try {
             var ablsolutePath = uploadPath + File.separator + path;
             List<String> list = WordSplitHelper.splitByParagraphs(ablsolutePath);
-            VectorStore myVectorStore = vectorStoreFactory.createVectorStore("base_knowledge", "base_knowledge",
+            VectorStore myVectorStore = vectorStoreFactory.createVectorStore("pro_knowledge", "pro_knowledge",
                     embeddingModel);
             List<Document> documents = list.parallelStream()
-                    .map(text -> new Document(text, Map.of("subdivision", "base"))).collect(Collectors.toList());
+                    .map(text -> new Document(text, Map.of("subdivision", "pro"))).collect(Collectors.toList());
+            System.out.println("documents: "+documents.size());
             myVectorStore.add(documents);
         } catch (Exception e) {
             e.printStackTrace();

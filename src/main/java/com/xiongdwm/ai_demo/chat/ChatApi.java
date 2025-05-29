@@ -2,7 +2,7 @@ package com.xiongdwm.ai_demo.chat;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -25,6 +25,7 @@ import com.xiongdwm.ai_demo.utils.global.WordSplitHelper;
 import io.micrometer.common.util.StringUtils;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -42,14 +43,11 @@ public class ChatApi {
     @PersistenceContext
     private EntityManager entityManager;
 
-  
-
-
     @PostMapping("/streaming/chat/baseKnowledge")
     public Flux<String> sinkFlux(@RequestParam("message") String message,
             @RequestHeader(value = "chat-id", required = false) String chatId,
-            @RequestParam(value = "fileName",required = false) String fileName,
-            @RequestParam(value = "pictureName",required = false) String pictureName){
+            @RequestParam(value = "fileName", required = false) String fileName,
+            @RequestParam(value = "pictureName", required = false) String pictureName) {
         return Flux.create(sink -> {
             if (message == null || message.isEmpty()) {
                 sink.next("消息不能为空");
@@ -66,7 +64,19 @@ public class ChatApi {
             System.out.println("上轮对话：" + contexts);
             sink.next("【系统】意图识别中...\n");
             System.out.println("意图识别中...");
-            intentMsgAsync(message, contexts)
+            AtomicBoolean cancelled = new AtomicBoolean(false);
+            final Disposable[] disposable = new Disposable[2];
+            sink.onCancel(() -> {
+                cancelled.set(true);
+                if (disposable[0] != null && !disposable[0].isDisposed()) {
+                    disposable[0].dispose();
+                }
+                if (disposable[1] != null && !disposable[1].isDisposed()) {
+                    disposable[1].dispose();
+                }
+                sink.complete();
+            });
+            disposable[0] = intentMsgAsync(message, contexts)
                     .subscribe(intent -> {
                         sink.next("【系统】已识别意图：" + intent + "\n");
                         System.out.println("已识别意图：" + intent);
@@ -82,7 +92,7 @@ public class ChatApi {
                                 }
                                 sink.next("【系统】SQL生成中...\n");
                                 System.out.println("SQL生成中...");
-                                sqlGenerateAsync(results, message,topicId)
+                                sqlGenerateAsync(results, message, topicId)
                                         .subscribe(sql -> {
                                             sink.next("【系统】已生成SQL：" + sql + "\n");
                                             System.out.println("已生成SQL：" + sql);
@@ -97,7 +107,7 @@ public class ChatApi {
                                             sink.next("【系统】SQL执行完成\n");
                                             System.out.println("SQL执行完成");
                                             sink.next("【系统】答案生成中...\n");
-                                            dbAgentLLMAnswer(results, sqlResult, message,topicId)
+                                            dbAgentLLMAnswer(results, sqlResult, message, topicId)
                                                     .doOnNext(sink::next)
                                                     .doOnComplete(sink::complete)
                                                     .subscribe();
@@ -105,25 +115,25 @@ public class ChatApi {
                                 break;
                             case "2":
                                 sink.next("【系统】知识库问答中...\n");
-                                List<String> fileContent= new ArrayList<>();
-                                if(fileName!=null && !fileName.isEmpty()){
+                                List<String> fileContent = new ArrayList<>();
+                                if (fileName != null && !fileName.isEmpty()) {
                                     sink.next("【系统】解析文件中...\n");
-                                    try{
+                                    try {
                                         fileContent = WordSplitHelper.splitByParagraphs(fileName);
                                         System.out.println("fileContent size: " + fileContent.size());
                                         sink.next("【系统】已解析文件内容 \n");
-                                    }catch (Exception e) {
+                                    } catch (Exception e) {
                                         sink.next("文件解析失败 \n");
                                     }
                                 }
-                                streamingChatWithBaseKnowledge(message, topicId,fileContent)
+                                disposable[1] = streamingChatWithBaseKnowledge(message, topicId, fileContent)
                                         .doOnNext(sink::next)
                                         .doOnComplete(sink::complete)
                                         .subscribe();
                                 break;
                             case "3":
                                 sink.next("【系统】闲聊中...\n");
-                                streamingChat(message, topicId)
+                                disposable[1] = streamingChat(message, topicId)
                                         .doOnNext(sink::next)
                                         .doOnComplete(sink::complete)
                                         .subscribe();
@@ -142,7 +152,6 @@ public class ChatApi {
         });
     }
 
-
     private List<Document> dbDescriptionGenerate(String message) {
         VectorStore myVectorStore = vectorStoreFactory.createVectorStore("db_description", "db_description",
                 embeddingModel);
@@ -159,6 +168,7 @@ public class ChatApi {
         // 执行sql
         var query = entityManager.createNativeQuery(sql);
         List<Object[]> resultList = query.getResultList();
+        System.out.println(resultList);
         StringBuilder sb = new StringBuilder();
         for (Object[] row : resultList) {
             sb.append(java.util.Arrays.toString(row)).append("\n");
@@ -190,11 +200,13 @@ public class ChatApi {
                     if (!answer.isEmpty()) {
                         chatContextManager.putContextToCache(chatId, message, answer);
                     }
+                }).doOnCancel(() -> {
+                    System.out.println("回答取消");
                 });
     }
 
     @PostMapping("/test")
-    public Mono<String> test(){
+    public Mono<String> test() {
         WordSplitHelper wordSplitHelper = new WordSplitHelper();
         String filePath = "/Users/xiong/Files/ai_demo/upload/中国移动哑资源数智化转型白皮书会议纪要.docx";
         try {
@@ -236,22 +248,24 @@ public class ChatApi {
                     if (!fullAnswer.isEmpty()) {
                         chatContextManager.putContextToCache(chatId, message, fullAnswer);
                     }
+                }).doOnCancel(() -> {
+                    System.out.println("回答取消");
                 });
         // return ollamaChatModel.stream(new
         // Prompt(promptBuilder.toString())).map(resp->resp.getResult().getOutput().getText());
     }
 
-    private Flux<String> streamingChatWithBaseKnowledge(String message, String chatId,List<String> fileContent) {
+    private Flux<String> streamingChatWithBaseKnowledge(String message, String chatId, List<String> fileContent) {
         List<String> context = chatContextManager.getAllContextFromCache(chatId);
-        var vectorStore = vectorStoreFactory.createVectorStore("base_knowledge", "base_knowledge", embeddingModel);
+        var vectorStore = vectorStoreFactory.createVectorStore("pro_knowledge", "pro_knowledge", embeddingModel);
         List<Document> searchResults = new ArrayList<>(vectorStore.similaritySearch(SearchRequest.builder()
                 .query(message)
                 .similarityThreshold(0.8f)
-                .topK(8)
+                .topK(18)
                 .build()));
 
         System.out.println("knowledge size: " + searchResults.size());
-        if(!fileContent.isEmpty()){
+        if (!fileContent.isEmpty()) {
             fileContent.forEach(c -> searchResults.add(new Document(c)));
         }
 
@@ -277,7 +291,7 @@ public class ChatApi {
 
         }
 
-        Prompt prompt=new Prompt(promptBuilder.toString());
+        Prompt prompt = new Prompt(promptBuilder.toString());
         Flux<ChatResponse> stream = ollamaChatModel.stream(prompt);
 
         // 回答并缓存问答
@@ -292,9 +306,10 @@ public class ChatApi {
                     if (!fullAnswer.isEmpty()) {
                         chatContextManager.putContextToCache(chatId, message, fullAnswer);
                     }
+                }).doOnCancel(() -> {
+                    System.out.println("回答取消");
                 });
     }
-
 
     private Mono<String> intentMsgAsync(String message, List<String> contexts) {
         StringBuilder prompt = new StringBuilder();
@@ -307,17 +322,20 @@ public class ChatApi {
         }
         prompt.append("##当前问题：").append(message).append("\n");
 
-        Prompt promptWithModelChose=new Prompt(prompt.toString(),ChatOptions.builder()
+        Prompt promptWithModelChose = new Prompt(prompt.toString(), ChatOptions.builder()
                 .model("qwen3:4b")
                 .build());
         return Mono.fromCallable(() -> ollamaChatModel.call(promptWithModelChose).getResult().getOutput().getText())
                 .subscribeOn(Schedulers.boundedElastic())
+                .doOnCancel(() -> {
+                    System.out.println("取消意图识别");
+                })
                 .map(this::extractAnswerOnly);
     }
 
     // SQL生成流式收集
     private Mono<String> sqlGenerateAsync(List<Document> results, String message, String topicId) {
-        var topic="sql-"+topicId;
+        var topic = "sql-" + topicId;
         StringBuilder prompt = new StringBuilder();
         prompt.append("###你是SQL生成助手。请根据下方数据库结构描述、用户问题以及上轮回答, 直接生成对应的SQL语句, 只输出SQL, 不要解释。\n")
                 .append("###数据库结构描述：\n");
@@ -325,11 +343,11 @@ public class ChatApi {
             prompt.append(doc.getText()).append("\n");
         }
 
-        var context=chatContextManager.getLatest(topic);
+        var context = chatContextManager.getLatest(topic);
         if (StringUtils.isNotBlank(context)) {
-                System.out.println(context);
-             prompt.append("###上轮回答：\n").append(context).append("\n");
-        }else{
+            System.out.println(context);
+            prompt.append("###上轮回答：\n").append(context).append("\n");
+        } else {
             prompt.append("###上轮回答：\n").append("无\n");
         }
         prompt.append("###注意数字，不要编造数字\n")
@@ -339,7 +357,7 @@ public class ChatApi {
                 .append("###用户问题：\n")
                 .append(message).append("\n")
                 .append("###SQL:\n");
-        Prompt promptWithModelChose=new Prompt(prompt.toString(),ChatOptions.builder()
+        Prompt promptWithModelChose = new Prompt(prompt.toString(), ChatOptions.builder()
                 .model("qwen3:4b")
                 .build());
         return ollamaChatModel.stream(promptWithModelChose)
@@ -347,8 +365,8 @@ public class ChatApi {
                 .reduce(new StringBuilder(), StringBuilder::append)
                 .map(StringBuilder::toString)
                 .map(this::extractAnswerOnly)
-                .doOnSuccess(sql->{
-                    if(StringUtils.isNotBlank(sql)){
+                .doOnSuccess(sql -> {
+                    if (StringUtils.isNotBlank(sql)) {
                         chatContextManager.putContextToCache(topic, message, sql);
                     }
                 })
