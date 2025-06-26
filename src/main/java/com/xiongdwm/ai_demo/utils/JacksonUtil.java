@@ -30,22 +30,22 @@ public class JacksonUtil {
     }
     static ObjectMapper objectMapper=new ObjectMapper();
 
-    public static String parse(Object obj){
+    public static Optional<String> toJsonString(Object obj){
         try {
-            return objectMapper.writeValueAsString(obj);
+            return Optional.of(objectMapper.writeValueAsString(obj));
         }catch (JsonProcessingException e){
             System.out.println(e.getLocalizedMessage());
         }
-        return "";
+        return Optional.empty();
     }
 
-    public static<T> T parse(String str,Class<T> clazz){
+    public static<T> Optional<T> fromJsonString(String str,Class<T> clazz){
         try{
-            return objectMapper.readValue(str,clazz);
+            return Optional.of(objectMapper.readValue(str,clazz));
         }catch (IOException e){
             System.out.println(e.getLocalizedMessage());
         }
-        return null;
+        return Optional.empty();
     }
 
     public static<T> Optional<T> map2Object(Map<?,?>map,Class<T> clazz){
@@ -115,15 +115,18 @@ public class JacksonUtil {
         return e;
     }
 
-        public static JsonNode convertToJsonNode(Object obj){
-        String jsonString=parse(obj);
+    public static Optional<JsonNode> convertToJsonNode(Object obj){
+        Optional<String> jsonString=toJsonString(obj);
+        if(jsonString.isEmpty()) return Optional.empty();
         JsonNode jsonNode = null;
         try {
-            jsonNode = objectMapper.readTree(jsonString);
+            String value= jsonString.get();
+            jsonNode = objectMapper.readTree(value);
         } catch (IOException e) {
             System.out.println(e.getLocalizedMessage());
+            return Optional.empty();
         }
-        return jsonNode;
+        return Optional.of(jsonNode);
     }
 
 }

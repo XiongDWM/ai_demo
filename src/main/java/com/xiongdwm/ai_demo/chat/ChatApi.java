@@ -18,7 +18,9 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.xiongdwm.ai_demo.utils.JacksonUtil;
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
+import com.xiongdwm.ai_demo.utils.global.ApiResponse;
 import com.xiongdwm.ai_demo.utils.global.GlobalPrompt;
 import com.xiongdwm.ai_demo.utils.global.WordSplitHelper;
 
@@ -46,23 +48,31 @@ public class ChatApi {
     @PostMapping("/streaming/chat/baseKnowledge")
     public Flux<String> sinkFlux(@RequestParam("message") String message,
             @RequestHeader(value = "chat-id", required = false) String chatId,
+            @RequestParam(value = "knowledge", required = false) String knowledge,
             @RequestParam(value = "fileName", required = false) String fileName,
             @RequestParam(value = "pictureName", required = false) String pictureName) {
+
+        String conversationId = chatId + "-" + System.currentTimeMillis();
         return Flux.create(sink -> {
+            System.out.println("传入cvid：" + conversationId);
+            chatContextManager.registerSink(conversationId, sink);
             if (message == null || message.isEmpty()) {
-                sink.next("消息不能为空");
+                sink.next(
+                        JacksonUtil.toJsonString(new ConversationContext("消息不能为空", conversationId)).get() + "</chunk>");
                 sink.complete();
                 return;
             }
             if (chatId == null || chatId.isEmpty()) {
-                sink.next("chat-id不能为空");
+                sink.next(JacksonUtil.toJsonString(new ConversationContext("chat-id不能为空", conversationId)).get()
+                        + "</chunk>");
                 sink.complete();
                 return;
             }
 
             var contexts = chatContextManager.getLatestWithIntents(chatId);
             System.out.println("上轮对话：" + contexts);
-            sink.next("【系统】意图识别中...\n");
+            sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】意图识别中...", conversationId)).get()
+                    + "</chunk>");
             System.out.println("意图识别中...");
             AtomicBoolean cancelled = new AtomicBoolean(false);
             final Disposable[] disposable = new Disposable[2];
@@ -78,74 +88,118 @@ public class ChatApi {
             });
             disposable[0] = intentMsgAsync(message, contexts)
                     .subscribe(intent -> {
-                        sink.next("【系统】已识别意图：" + intent + "\n");
+                        sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】识别意图：" + intent, conversationId))
+                                .get() + "</chunk>");
                         System.out.println("已识别意图：" + intent);
                         var topicId = chatId + "-" + intent;
                         switch (intent) {
                             case "1":
-                                sink.next("【系统】数据库结构检索中...\n");
+                                sink.next(JacksonUtil
+                                        .toJsonString(new ConversationContext("【系统】数据库结构检索中...", conversationId)).get()
+                                        + "</chunk>");
                                 List<Document> results = dbDescriptionGenerate(message);
                                 if (results.isEmpty()) {
-                                    sink.next("没有找到相关数据");
+                                    sink.next(JacksonUtil
+                                            .toJsonString(new ConversationContext("【系统】未找到相关数据库结构描述", conversationId))
+                                            .get() + "</chunk>");
                                     sink.complete();
                                     return;
                                 }
-                                sink.next("【系统】SQL生成中...\n");
+                                sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】SQL生成中", conversationId))
+                                        .get() + "</chunk>");
                                 System.out.println("SQL生成中...");
                                 sqlGenerateAsync(results, message, topicId)
                                         .subscribe(sql -> {
-                                            sink.next("【系统】已生成SQL：" + sql + "\n");
+                                            sink.next(JacksonUtil
+                                                    .toJsonString(
+                                                            new ConversationContext("【系统】已生成SQL：" + sql, conversationId))
+                                                    .get() + "</chunk>");
                                             System.out.println("已生成SQL：" + sql);
                                             if (sql.isEmpty()) {
-                                                sink.next("生成sql失败");
+                                                sink.next(JacksonUtil
+                                                        .toJsonString(
+                                                                new ConversationContext("【系统】生成SQL失败", conversationId))
+                                                        .get() + "</chunk>");
                                                 sink.complete();
                                                 return;
                                             }
-                                            sink.next("【系统】SQL执行中...\n");
+                                            sink.next(JacksonUtil
+                                                    .toJsonString(
+                                                            new ConversationContext("【系统】SQL执行中...", conversationId))
+                                                    .get() + "</chunk>");
                                             System.out.println("SQL执行中...");
                                             String sqlResult = sqlExecute(sql);
-                                            sink.next("【系统】SQL执行完成\n");
+                                            sink.next(JacksonUtil
+                                                    .toJsonString(new ConversationContext("【系统】SQL执行完成", conversationId))
+                                                    .get() + "</chunk>");
                                             System.out.println("SQL执行完成");
-                                            sink.next("【系统】答案生成中...\n");
+                                            sink.next(JacksonUtil
+                                                    .toJsonString(
+                                                            new ConversationContext("【系统】正在回答问题...", conversationId))
+                                                    .get() + "</chunk>");
                                             dbAgentLLMAnswer(results, sqlResult, message, topicId)
-                                                    .doOnNext(sink::next)
+                                                    .doOnNext(chunk -> {
+                                                        sink.next(JacksonUtil
+                                                                .toJsonString(
+                                                                        new ConversationContext(chunk, conversationId))
+                                                                .get() + "</chunk>");
+                                                    })
                                                     .doOnComplete(sink::complete)
                                                     .subscribe();
                                         });
                                 break;
                             case "2":
-                                sink.next("【系统】知识库问答中...\n");
+                                sink.next(JacksonUtil
+                                        .toJsonString(new ConversationContext("【系统】知识库问答中...\n", conversationId)).get()
+                                        + "</chunk>");
                                 List<String> fileContent = new ArrayList<>();
                                 if (fileName != null && !fileName.isEmpty()) {
-                                    sink.next("【系统】解析文件中...\n");
+                                    sink.next(JacksonUtil
+                                            .toJsonString(new ConversationContext("【系统】正在解析文件内容...", conversationId))
+                                            .get() + "</chunk>");
                                     try {
                                         fileContent = WordSplitHelper.splitByParagraphs(fileName);
                                         System.out.println("fileContent size: " + fileContent.size());
-                                        sink.next("【系统】已解析文件内容 \n");
+                                        sink.next(JacksonUtil
+                                                .toJsonString(new ConversationContext("【系统】已解析文件内容", conversationId))
+                                                .get() + "</chunk>");
                                     } catch (Exception e) {
-                                        sink.next("文件解析失败 \n");
+                                        sink.next(JacksonUtil.toJsonString(
+                                                new ConversationContext("文件解析失败：" + e.getMessage(), conversationId))
+                                                .get() + "</chunk>");
                                     }
                                 }
-                                disposable[1] = streamingChatWithBaseKnowledge(message, topicId, fileContent)
-                                        .doOnNext(sink::next)
+                                disposable[1] = streamingChatWithBaseKnowledge(message, topicId, fileContent,knowledge)
+                                        .doOnNext(chunk -> {
+                                            sink.next(JacksonUtil
+                                                    .toJsonString(new ConversationContext(chunk, conversationId)).get()
+                                                    + "</chunk>");
+                                        })
                                         .doOnComplete(sink::complete)
                                         .subscribe();
                                 break;
                             case "3":
-                                sink.next("【系统】闲聊中...\n");
+                                sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】闲聊中...", conversationId))
+                                        .get() + "</chunk>");
                                 disposable[1] = streamingChat(message, topicId)
-                                        .doOnNext(sink::next)
+                                        .doOnNext(chunk -> {
+                                            sink.next(JacksonUtil
+                                                    .toJsonString(new ConversationContext(chunk, conversationId)).get()
+                                                    + "</chunk>");
+                                        })
                                         .doOnComplete(sink::complete)
                                         .subscribe();
                                 break;
                             default:
-                                sink.next("意图识别失败");
+                                sink.next(JacksonUtil.toJsonString(new ConversationContext("意图识别失败，请重试", conversationId))
+                                        .get() + "</chunk>");
                                 sink.complete();
                                 return;
                         }
                     }, error -> {
                         error.printStackTrace();
-                        sink.next("系统异常：" + error.getMessage());
+                        sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】系统异常", conversationId)).get()
+                                + "</chunk>");
                         sink.complete();
                         return;
                     });
@@ -219,6 +273,14 @@ public class ChatApi {
         return Mono.just("Test method executed");
     }
 
+    @PostMapping("/streaming/cancel")
+    public Mono<ApiResponse<String>> cancelStreaming(@RequestParam("conversationId") String conversationId) {
+        System.out.println();
+        System.out.println("取消接口调用");
+        chatContextManager.cancel(conversationId, "回答取消");
+        return Mono.just(ApiResponse.success("已取消回答"));
+    }
+
     private Flux<String> streamingChat(String message, String chatId) {
         System.out.println("streamingChatId: " + chatId);
         List<String> context = chatContextManager.getAllContextFromCache(chatId);
@@ -241,6 +303,7 @@ public class ChatApi {
         return stream.map(chatResp -> chatResp.getResult().getOutput().getText())
                 .doOnNext(chunk -> {
                     fullAnswerBuilder.append(chunk);
+                    System.out.print(chunk);
                 })
                 .doOnComplete(() -> {
                     // 在流完成后存储完整的问答
@@ -249,24 +312,48 @@ public class ChatApi {
                         chatContextManager.putContextToCache(chatId, message, fullAnswer);
                     }
                 }).doOnCancel(() -> {
+                    System.out.println();
                     System.out.println("回答取消");
                 });
         // return ollamaChatModel.stream(new
         // Prompt(promptBuilder.toString())).map(resp->resp.getResult().getOutput().getText());
     }
 
-    private Flux<String> streamingChatWithBaseKnowledge(String message, String chatId, List<String> fileContent) {
+    private Flux<String> streamingChatWithBaseKnowledge(String message, String chatId, List<String> fileContent,
+            String knowledge) {
         List<String> context = chatContextManager.getAllContextFromCache(chatId);
-        var vectorStore = vectorStoreFactory.createVectorStore("pro_knowledge", "pro_knowledge", embeddingModel);
-        List<Document> searchResults = new ArrayList<>(vectorStore.similaritySearch(SearchRequest.builder()
-                .query(message)
-                .similarityThreshold(0.8f)
-                .topK(18)
-                .build()));
+        final List<Document> documents = new ArrayList<>();
+        if (StringUtils.isBlank(knowledge)) {
+            knowledge = "base_knowledge";
+            var vectorStore = vectorStoreFactory.createVectorStore("base_knowledge", "base_knowledge", embeddingModel);
+            documents.addAll(vectorStore.similaritySearch(SearchRequest.builder()
+                    .query(message)
+                    .similarityThreshold(0.8f)
+                    .topK(18)
+                    .build()));
+        } else {
+            for (String split : knowledge.split(",")) {
+                var vectorStore = vectorStoreFactory.createVectorStore(split, split, embeddingModel);
+                List<Document> searchResults = vectorStore.similaritySearch(SearchRequest.builder()
+                        .query(message)
+                        .similarityThreshold(0.8f)
+                        .topK(18)
+                        .build());
+                System.out.println("searchResults size: " + searchResults.size());
+                documents.addAll(searchResults);
+                List<Document> sortedDocuments = documents.stream().sorted((d1, d2) -> {
+                    return Double.compare(d2.getScore(), d1.getScore());
+                }).toList();
+                List<Document> topDocuments = sortedDocuments.size() > 18 ? sortedDocuments.subList(0, 18) : sortedDocuments;
+                documents.clear();
+                documents.addAll(topDocuments);
+                System.out.println("knowledge size: " + documents.size());
+            }
+        }
 
-        System.out.println("knowledge size: " + searchResults.size());
+        System.out.println("knowledge size: " + documents.size());
         if (!fileContent.isEmpty()) {
-            fileContent.forEach(c -> searchResults.add(new Document(c)));
+            fileContent.forEach(c -> documents.add(new Document(c)));
         }
 
         var promptBuilder = new StringBuilder();
@@ -280,17 +367,16 @@ public class ChatApi {
             context.forEach(promptBuilder::append);
             promptBuilder.append("##如果上下文内容与这次问题无关，忽略上下文\n");
         }
-        if (!searchResults.isEmpty()) {
+        if (!knowledge.isEmpty()) {
             promptBuilder.append("##你需要结合知识库作出合理、自然的回答\n");
             promptBuilder.append("##仅使用与问题相关的知识库内容，忽略无关内容\n");
             promptBuilder.append("##如果知识库内容无法完全回答，可以补充你自己的知识。\n");
             promptBuilder.append("##知识库如下：\n");
-            for (Document doc : searchResults) {
+            for (Document doc : documents) {
                 promptBuilder.append("##").append(doc.getText()).append("\n");
             }
 
         }
-
         Prompt prompt = new Prompt(promptBuilder.toString());
         Flux<ChatResponse> stream = ollamaChatModel.stream(prompt);
 
@@ -321,7 +407,6 @@ public class ChatApi {
             contexts.forEach(c -> prompt.append(c).append("\n"));
         }
         prompt.append("##当前问题：").append(message).append("\n");
-
         Prompt promptWithModelChose = new Prompt(prompt.toString(), ChatOptions.builder()
                 .model("qwen3:4b")
                 .build());
@@ -371,7 +456,6 @@ public class ChatApi {
                     }
                 })
                 .doOnError(error -> {
-
                     System.err.println("Error during SQL generation: " + error.getMessage());
                 });
     }

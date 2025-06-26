@@ -6,6 +6,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import java.util.Date;
+
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingResponse;
@@ -24,6 +26,7 @@ import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
 import com.xiongdwm.ai_demo.utils.global.ApiResponse;
 import com.xiongdwm.ai_demo.utils.global.WordSplitHelper;
 import com.xiongdwm.ai_demo.webapp.entities.FileLog;
+import com.xiongdwm.ai_demo.webapp.entities.KnowledgeBase;
 import com.xiongdwm.ai_demo.webapp.service.FileLogService;
 
 import reactor.core.publisher.Mono;
@@ -46,7 +49,6 @@ public class EmbeddingApi {
         System.out.println("demension: " + embeddingResponse.getResults().get(0).getOutput().length);
         System.out.println("====================================================================");
         System.out.println(embeddingResponse.getResults().get(0).getOutput());
-
         System.out.println("Embedding Response: " + embeddingResponse);
 
         return embeddingResponse;
@@ -87,9 +89,16 @@ public class EmbeddingApi {
     @PostMapping("/embedding/byDocPath")
     public ApiResponse<String> getEmbeddingByDocPath(@RequestParam("path") String path) {
         try {
-            var ablsolutePath = uploadPath + File.separator + path;
-            List<String> list = WordSplitHelper.splitByParagraphs(ablsolutePath);
-            VectorStore myVectorStore = vectorStoreFactory.createVectorStore("pro_knowledge", "pro_knowledge",
+            KnowledgeBase knowledgeBase = fileLogService.getByFilePath(path).getKnowledgeBase();
+            if (knowledgeBase == null) {
+                return ApiResponse.error("Knowledge base not found for the given file path.");
+            }
+            var tag= knowledgeBase.getTag();
+            if(StringUtils.isBlank(tag.trim())) {
+                return ApiResponse.error("Knowledge base tag is empty or whitespace only.");
+            }
+            List<String> list = WordSplitHelper.splitByParagraphs(path);
+            VectorStore myVectorStore = vectorStoreFactory.createVectorStore(tag, tag,
                     embeddingModel);
             List<Document> documents = list.parallelStream()
                     .map(text -> new Document(text, Map.of("subdivision", "pro"))).collect(Collectors.toList());
@@ -102,20 +111,24 @@ public class EmbeddingApi {
     }
 
     @PostMapping(value = "/embedding/upload", consumes = "multipart/form-data", produces = "application/json")
-    public Mono<ApiResponse<String>> uploadPicture(@RequestPart("file") FilePart filePart) {
+    public Mono<ApiResponse<String>> upload(@RequestPart("file") FilePart filePart,@RequestParam("knowledgeBaseId")Long knowledgeBaseId) {
         String filePath = uploadPath + File.separator + filePart.filename();
         FileLog fileLog = new FileLog();
         fileLog.setId(0L);
         fileLog.setFileName(filePart.filename());
         fileLog.setFilePath(filePath);
         fileLog.setUploadTime(new Date());
-        fileLog.setFaculty("zwk");
+        fileLog.setKnowledgeBaseId(knowledgeBaseId);
+        fileLog.setFaculty(""); //之后从userToken里面取
         fileLogService.saveFileLog(fileLog);
         File dest = new File(filePath);
         return filePart.transferTo(dest)
                 .then(Mono.fromCallable(() -> {
                     List<String> list = WordSplitHelper.splitByParagraphs(filePath);
-                    System.out.println(list);
+                    list.stream().forEach(chunk->{
+                        System.out.println();
+                        System.out.println("chunk: "+chunk);
+                    });
                     return ApiResponse.success(filePart.filename());
                 }))
                 .onErrorResume(e -> {

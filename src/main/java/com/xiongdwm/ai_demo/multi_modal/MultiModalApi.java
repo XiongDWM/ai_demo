@@ -4,14 +4,15 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
-import org.springframework.ai.chat.messages.UserMessage;
+
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.model.Media;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.security.SecurityProperties.User;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.util.MimeTypeUtils;
@@ -25,6 +26,7 @@ import com.xiongdwm.ai_demo.utils.cache.CacheHandler;
 import com.xiongdwm.ai_demo.utils.cache.LRUCache;
 import com.xiongdwm.ai_demo.utils.global.ApiResponse;
 
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 
 import reactor.core.publisher.Flux;
@@ -56,9 +58,10 @@ public class MultiModalApi {
                 "##Ignore all line breaks in the extracted text and respond with a single continuous string.\n" +
                 "##Do not answer with any explanation, imagination or translation.\n" +
                 "##Respond with only the extracted text. -- just the extracted text.\n";
-        var userMessage = new UserMessage(
-                text,
-                List.of(new Media(MimeTypeUtils.IMAGE_JPEG, resource)));
+        var userMessage = UserMessage.builder()
+                .text(text)
+                .media(List.of(new Media(MimeTypeUtils.IMAGE_JPEG, resource)))
+                .build();
         return model.call(new Prompt(userMessage, ChatOptions.builder().model(OllamaModel.LLAVA.getName()).build()))
                 .getResult().getOutput().getText();
     }
@@ -83,9 +86,10 @@ public class MultiModalApi {
                 "##If the text in the picture cannot be recognized, respond with '无法识别'.\n" +
                 "##Do not answer with any explanation, imagination or translation.\n" +
                 "##Respond with only the extracted text. -- just the extracted text.\n";
-        var userMessage = new UserMessage(
-                promptText,
-                List.of(new Media(MimeTypeUtils.IMAGE_JPEG, resource)));
+        var userMessage = new UserMessage.Builder()
+                .text(promptText)
+                .media(List.of(new Media(MimeTypeUtils.IMAGE_JPEG, resource)))
+                .build();
         StringBuilder fullAnswerBuilder = new StringBuilder();
         Flux<ChatResponse> stream = model.stream(new Prompt(userMessage, ChatOptions.builder().model("minicpm-v:8b")
                 .temperature(0.1)

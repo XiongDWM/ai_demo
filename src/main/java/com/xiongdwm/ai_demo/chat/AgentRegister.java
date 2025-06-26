@@ -1,7 +1,13 @@
 package com.xiongdwm.ai_demo.chat;
 
+import org.springframework.context.annotation.Configuration;
 
-public class OllamaOptions {
-    
+
+@Configuration
+public class AgentRegister {
+    // @Bean
+    // public Agent agent(){
+
+    // }
     
 }
