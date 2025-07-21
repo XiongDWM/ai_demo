@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.SessionAttribute;
 
 import com.xiongdwm.ai_demo.utils.JacksonUtil;
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
@@ -50,9 +51,11 @@ public class ChatApi {
             @RequestHeader(value = "chat-id", required = false) String chatId,
             @RequestParam(value = "knowledge", required = false) String knowledge,
             @RequestParam(value = "fileName", required = false) String fileName,
+            @SessionAttribute(value="user",required = false) String auth,
             @RequestParam(value = "pictureName", required = false) String pictureName) {
 
         String conversationId = chatId + "-" + System.currentTimeMillis();
+        System.out.println("cookie:" + auth);
         return Flux.create(sink -> {
             System.out.println("传入cvid：" + conversationId);
             chatContextManager.registerSink(conversationId, sink);
@@ -250,7 +253,7 @@ public class ChatApi {
                     resultBuilder.append(chunk);
                 }).doOnComplete(() -> {
                     String result = resultBuilder.toString();
-                    var answer = extractAnswerOnly(result);
+                    var answer = ChatUtils.extractAnswerOnly(result);
                     if (!answer.isEmpty()) {
                         chatContextManager.putContextToCache(chatId, message, answer);
                     }
@@ -307,7 +310,7 @@ public class ChatApi {
                 })
                 .doOnComplete(() -> {
                     // 在流完成后存储完整的问答
-                    String fullAnswer = extractAnswerOnly(fullAnswerBuilder.toString());
+                    String fullAnswer = ChatUtils.extractAnswerOnly(fullAnswerBuilder.toString());
                     if (!fullAnswer.isEmpty()) {
                         chatContextManager.putContextToCache(chatId, message, fullAnswer);
                     }
@@ -323,7 +326,7 @@ public class ChatApi {
             String knowledge) {
         List<String> context = chatContextManager.getAllContextFromCache(chatId);
         final List<Document> documents = new ArrayList<>();
-        if (StringUtils.isBlank(knowledge)) {
+        if (StringUtils.isBlank(knowledge)&&fileContent.isEmpty()) {
             knowledge = "base_knowledge";
             var vectorStore = vectorStoreFactory.createVectorStore("base_knowledge", "base_knowledge", embeddingModel);
             documents.addAll(vectorStore.similaritySearch(SearchRequest.builder()
@@ -339,6 +342,7 @@ public class ChatApi {
                         .similarityThreshold(0.8f)
                         .topK(18)
                         .build());
+                if(null==searchResults || searchResults.isEmpty())continue;
                 System.out.println("searchResults size: " + searchResults.size());
                 documents.addAll(searchResults);
                 List<Document> sortedDocuments = documents.stream().sorted((d1, d2) -> {
@@ -388,7 +392,7 @@ public class ChatApi {
                 })
                 .doOnComplete(() -> {
                     // 在流完成后存储完整的问答
-                    String fullAnswer = extractAnswerOnly(fullAnswerBuilder.toString());
+                    String fullAnswer = ChatUtils.extractAnswerOnly(fullAnswerBuilder.toString());
                     if (!fullAnswer.isEmpty()) {
                         chatContextManager.putContextToCache(chatId, message, fullAnswer);
                     }
@@ -408,14 +412,14 @@ public class ChatApi {
         }
         prompt.append("##当前问题：").append(message).append("\n");
         Prompt promptWithModelChose = new Prompt(prompt.toString(), ChatOptions.builder()
-                .model("qwen3:4b")
+                .model("deepseek-r1:1.5b")
                 .build());
         return Mono.fromCallable(() -> ollamaChatModel.call(promptWithModelChose).getResult().getOutput().getText())
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnCancel(() -> {
                     System.out.println("取消意图识别");
                 })
-                .map(this::extractAnswerOnly);
+                .map(c->ChatUtils.extractAnswerOnly(c));
     }
 
     // SQL生成流式收集
@@ -449,7 +453,7 @@ public class ChatApi {
                 .map(chatResp -> chatResp.getResult().getOutput().getText())
                 .reduce(new StringBuilder(), StringBuilder::append)
                 .map(StringBuilder::toString)
-                .map(this::extractAnswerOnly)
+                .map(c->ChatUtils.extractAnswerOnly(c))
                 .doOnSuccess(sql -> {
                     if (StringUtils.isNotBlank(sql)) {
                         chatContextManager.putContextToCache(topic, message, sql);
@@ -458,13 +462,6 @@ public class ChatApi {
                 .doOnError(error -> {
                     System.err.println("Error during SQL generation: " + error.getMessage());
                 });
-    }
-
-    private String extractAnswerOnly(String text) {
-        String[] lines = text.split("</think>");
-        if (lines.length < 2)
-            return "";
-        return lines[1].trim();
     }
 
 }

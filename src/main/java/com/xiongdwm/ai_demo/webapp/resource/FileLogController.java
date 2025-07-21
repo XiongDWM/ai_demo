@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -32,7 +33,7 @@ public class FileLogController {
     @PostMapping("/knowledgeBase/save")
     public ApiResponse<String> saveKnowledgeBase(KnowledgeBase knowledgeBase) {
         var tag = knowledgeBase.getTag();
-        if (StringUtils.isEmpty(tag.trim())) {
+        if (StringUtils.isEmpty(tag)|| tag.trim().length() < 2) {
             // todo uuid 随机
             UUID uuid = UUID.randomUUID();
             tag = uuid.toString();
@@ -48,7 +49,7 @@ public class FileLogController {
     }
 
     @PostMapping("/knowledgeBase/show")
-    public List<KnowledgeBase> showKnowledgeBases() {
+    public List<KnowledgeBase> showKnowledgeBases(@RequestHeader("Authorization") String token) {
         return fileLogService.showKnowledgeBases();
     }
 }

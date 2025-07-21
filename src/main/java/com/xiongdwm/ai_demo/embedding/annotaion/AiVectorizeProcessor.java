@@ -48,10 +48,10 @@ public class AiVectorizeProcessor implements BeanPostProcessor {
 
     @PostConstruct
     public void printAllEntityDescriptions() {
-        VectorStore v = vectorStoreFactory.createVectorStore("db_description", "db_description", embeddingModel);
+        VectorStore v = vectorStoreFactory.createVectorStore("db_description", "db_description", embeddingModel); // 创建一个向量存储
         ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
         scanner.addIncludeFilter(new AnnotationTypeFilter(AiVectorize.class));
-        String basePackage = "com.xiongdwm.ai_demo.webapp.entities"; // Specify your base package
+        String basePackage = "com.xiongdwm.ai_demo.webapp.entities"; // Specify the base package
         Set<BeanDefinition> candidates = scanner.findCandidateComponents(basePackage);
         for (BeanDefinition bd : candidates) {
             try {

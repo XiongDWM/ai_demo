@@ -1,13 +1,15 @@
 package com.xiongdwm.ai_demo.webapp.service.impl;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.RequestParam;
 
+import com.xiongdwm.ai_demo.webapp.entities.AiSysUser;
 import com.xiongdwm.ai_demo.webapp.entities.FileLog;
 import com.xiongdwm.ai_demo.webapp.entities.KnowledgeBase;
+import com.xiongdwm.ai_demo.webapp.repository.AiSysUserRepository;
 import com.xiongdwm.ai_demo.webapp.repository.FileLogRepo;
 import com.xiongdwm.ai_demo.webapp.repository.KnowledgeBaseRepository;
 import com.xiongdwm.ai_demo.webapp.service.FileLogService;
@@ -21,6 +23,8 @@ public class FileLogServiceImpl implements FileLogService{
     private FileLogRepo fileLogRepo;
     @Resource
     private KnowledgeBaseRepository knowledgeBaseRepository;
+    @Resource
+    private AiSysUserRepository aiSysUserRepository;
 
     @Override
     public List<FileLog> showFileLog(Long knowledgeBaseId) {
@@ -40,6 +44,13 @@ public class FileLogServiceImpl implements FileLogService{
 
     @Override
     public void saveKnowledgeBase(KnowledgeBase knowledgeBase) {
+        String[] usersString = knowledgeBase.getAuthorizedCharacter().split(",");
+        List<AiSysUser> users = new ArrayList<>();
+        for(String name: usersString){
+            AiSysUser user = aiSysUserRepository.findByUsername(name).orElse(null);
+            if(null!=user) users.add(user);
+        }
+        knowledgeBase.setUserPermissions(users);
         knowledgeBaseRepository.save(knowledgeBase);
     }
 
