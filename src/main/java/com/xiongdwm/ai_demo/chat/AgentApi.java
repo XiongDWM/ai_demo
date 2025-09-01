@@ -12,9 +12,9 @@ import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaApi;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
-import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -83,15 +83,15 @@ public class AgentApi {
                 sb.append("##请勿重复调用工具，等待工具返回结果后再继续");
                 sb.append("##可以多步调用多个工具，直到完成任务目标。\n");
                 sb.append("##如果无法调用工具，请直接用问题作为回答:"+message+" \n");
-                sb.append("##请直接返回工具调用的结果，不要添加其他内容 \n");
+                // sb.append("##请直接返回工具调用的结果，不要添加其他内容 \n");
                 sb.append("##你需要按照规定格式返回结果，如下：\n");
-                sb.append("##子问题:查询aaa和bbb之间的通路,参数:[起始点:aaa,终止点:bbb],结果:[xxx] \n");
                 sb.append("##问题如下: \n").append(message).append("\n");
                 ChatModel chatModel = OllamaChatModel.builder().ollamaApi(OllamaApi.builder().build()).build();
                 String conversationId = chatId + "-" + System.currentTimeMillis();
 
                 ChatOptions chatOption = ToolCallingChatOptions.builder()
                                 .model("qwen3:4b")
+                                // .model("nemotron-mini:4b")
                                 .toolCallbacks(toolCallbacks)
                                 .build();
                 Prompt prompt = new Prompt(sb.toString(), chatOption);
@@ -100,7 +100,7 @@ public class AgentApi {
                                 .call()
                                 .content();
                 var toolCallsResult=ChatUtils.extractAnswerOnly(response);
-                System.out.println(toolCallsResult);
+                System.out.println("工具结果："+toolCallsResult);
 
                 sb.setLength(0);
                 sb.append("##你是一名智能助手");
@@ -124,7 +124,36 @@ public class AgentApi {
                                         System.out.println("回答取消");
                                 });
         }
-
+        @PostMapping("/agent/test/chat")
+        public Mono<String> testChat(@RequestParam(name = "message") String message,
+                        @RequestHeader(value = "chat-id", required = false) String chatId) {
+                 ToolCallback[] toolCallbacks = ToolCallbacks.from(fiberTool, embeddingTool, dataBaseTool);
+                StringBuilder sb = new StringBuilder();
+                sb.append("##你是一名智能助手 \n");
+                sb.append("##请调用工具来回答用户的问题 \n");
+                sb.append("##请分步思考，合理拆解用户的问题，并在每一步根据需要调用合适的工具。\n");
+                sb.append("##每一步都要说明意图、工具、参数和预期结果 \n");
+                sb.append("##可以多步调用多个工具，直到完成任务目标。\n");
+                sb.append("##如果无法调用工具，请直接用问题作为回答:"+message+" \n");
+                // sb.append("##注意禁止重复调用同一个工具：如果工具已经返回了明确的结果，请直接用该结果继续推理或回答，不要再次调用该工具。");
+                sb.append("##问题如下: \n").append(message).append("\n");
+                ChatModel chatModel = OllamaChatModel.builder().ollamaApi(OllamaApi.builder().build()).build();
+                String conversationId = chatId + "-" + System.currentTimeMillis();
+                var tn=Thread.currentThread().getName();
+                System.out.println(tn);
+                ChatOptions chatOption = ToolCallingChatOptions.builder()
+                                .model("qwen3:4b")
+                                // .model("nemotron-mini:4b")
+                                .toolCallbacks(toolCallbacks)
+                                .build();
+                Prompt prompt = new Prompt(sb.toString(), chatOption);
+                var response = ChatClient.create(chatModel)
+                                .prompt(prompt)
+                                .call().content();
+                var toolCallsResult=ChatUtils.extractAnswerOnly(response);
+                System.out.println("工具结果："+toolCallsResult);
+                return Mono.just(response);
+        }
         @PostMapping("/agent/chat/evaluate")
         public Flux<String> evaluate(@RequestParam(name="chatId")String chatId,
                         @RequestParam(name = "score") boolean score) {
@@ -169,5 +198,22 @@ public class AgentApi {
                         }
                         return sb.toString();
                 });
+    }
+
+    @PostMapping("/agent/test/toolV2")
+    public Mono<String> testTool(@RequestParam(name="input") String input) {
+        WebClient webClient = WebClient.create("http://192.168.0.66:18888");
+        var response = webClient.post()
+        //     .uri(uri->uri
+        //         .path("/test/tool")
+        //         .queryParam("input", input)
+        //         .build()
+        //     )
+            .uri("/mcp/fiber/getIdByName")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("name", input))
+            .retrieve()
+            .bodyToMono(Long.class);
+        return response.map(result -> "测试工具成功，输入为：" + result);
     }
 }

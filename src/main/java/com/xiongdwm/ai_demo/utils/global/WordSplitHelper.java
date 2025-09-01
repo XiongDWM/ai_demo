@@ -10,6 +10,7 @@ import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFStyles;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
 
 public class WordSplitHelper {
     public static List<String> splitByHeadings(String filePath) throws FileNotFoundException, IOException {
@@ -91,5 +92,17 @@ public class WordSplitHelper {
             result.add(currentBlock.toString().trim());
         }
         return result;
+    }
+
+    private static String formatTable(XWPFTable table) {
+    StringBuilder sb = new StringBuilder();
+        sb.append("[表格]\n");
+        for (var row : table.getRows()) {
+            List<String> cells = new ArrayList<>();
+            row.getTableCells().forEach(cell -> cells.add(cell.getText().replace("\n", " ")));
+            sb.append(String.join(" | ", cells)).append("\n");
+        }
+        sb.append("[/表格]");
+        return sb.toString();
     }
 }

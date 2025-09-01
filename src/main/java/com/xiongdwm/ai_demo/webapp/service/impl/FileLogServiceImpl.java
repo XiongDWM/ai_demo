@@ -44,10 +44,10 @@ public class FileLogServiceImpl implements FileLogService{
 
     @Override
     public void saveKnowledgeBase(KnowledgeBase knowledgeBase) {
-        String[] usersString = knowledgeBase.getAuthorizedCharacter().split(",");
+        String[] usersIdString = knowledgeBase.getAuthorizedCharacter().split(",");
         List<AiSysUser> users = new ArrayList<>();
-        for(String name: usersString){
-            AiSysUser user = aiSysUserRepository.findByUsername(name).orElse(null);
+        for(String userIdString: usersIdString){
+            AiSysUser user = aiSysUserRepository.findById(Long.parseLong(userIdString)).orElse(null);
             if(null!=user) users.add(user);
         }
         knowledgeBase.setUserPermissions(users);

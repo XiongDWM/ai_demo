@@ -12,25 +12,19 @@ import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.security.SecurityProperties.User;
 import org.springframework.core.io.FileSystemResource;
-import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.xiongdwm.ai_demo.utils.cache.CacheHandler;
 import com.xiongdwm.ai_demo.utils.cache.LRUCache;
-import com.xiongdwm.ai_demo.utils.global.ApiResponse;
 
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 @RestController
 public class MultiModalApi {
@@ -142,19 +136,5 @@ public class MultiModalApi {
                     }
                 });
         
-    }
-
-    @PostMapping(value = "/file/upload", consumes = "multipart/form-data", produces = "application/json")
-    public Mono<ApiResponse<String>> uploadFile(@RequestPart("file") FilePart file)throws IllegalStateException, IOException {
-        String filePath = uploadPath + File.separator + file.filename();
-        File dest = new File(filePath);
-        return file.transferTo(dest)
-                .then(Mono.fromCallable(() -> {
-                    return ApiResponse.success(filePath);
-                }))
-                .onErrorResume(e -> {
-                    e.printStackTrace();
-                    return Mono.just(ApiResponse.error());
-                });
     }
 }

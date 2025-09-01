@@ -1,5 +1,6 @@
 package com.xiongdwm.ai_demo.chat;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -71,7 +72,7 @@ public class ChatApi {
                 sink.complete();
                 return;
             }
-
+            var isUploaded = (fileName != null && !fileName.isEmpty())||(pictureName != null && !pictureName.isEmpty());
             var contexts = chatContextManager.getLatestWithIntents(chatId);
             System.out.println("上轮对话：" + contexts);
             sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】意图识别中...", conversationId)).get()
@@ -79,8 +80,16 @@ public class ChatApi {
             System.out.println("意图识别中...");
             AtomicBoolean cancelled = new AtomicBoolean(false);
             final Disposable[] disposable = new Disposable[2];
+            Disposable heartbeat = Flux.interval(java.time.Duration.ofSeconds(10))
+                 .subscribe(tick -> {
+                    sink.next(JacksonUtil.toJsonString(
+                    new ConversationContext("", conversationId)).get() + "</chunk>");
+            });
             sink.onCancel(() -> {
                 cancelled.set(true);
+                if(heartbeat != null && !heartbeat.isDisposed()) {
+                    heartbeat.dispose();
+                }
                 if (disposable[0] != null && !disposable[0].isDisposed()) {
                     disposable[0].dispose();
                 }
@@ -89,7 +98,7 @@ public class ChatApi {
                 }
                 sink.complete();
             });
-            disposable[0] = intentMsgAsync(message, contexts)
+            disposable[0] = intentMsgAsync(message, contexts,isUploaded)
                     .subscribe(intent -> {
                         sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】识别意图：" + intent, conversationId))
                                 .get() + "</chunk>");
@@ -152,8 +161,7 @@ public class ChatApi {
                                         });
                                 break;
                             case "2":
-                                sink.next(JacksonUtil
-                                        .toJsonString(new ConversationContext("【系统】知识库问答中...\n", conversationId)).get()
+                                sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】知识库问答中...\n", conversationId)).get()
                                         + "</chunk>");
                                 List<String> fileContent = new ArrayList<>();
                                 if (fileName != null && !fileName.isEmpty()) {
@@ -162,7 +170,6 @@ public class ChatApi {
                                             .get() + "</chunk>");
                                     try {
                                         fileContent = WordSplitHelper.splitByParagraphs(fileName);
-                                        System.out.println("fileContent size: " + fileContent.size());
                                         sink.next(JacksonUtil
                                                 .toJsonString(new ConversationContext("【系统】已解析文件内容", conversationId))
                                                 .get() + "</chunk>");
@@ -325,6 +332,7 @@ public class ChatApi {
     private Flux<String> streamingChatWithBaseKnowledge(String message, String chatId, List<String> fileContent,
             String knowledge) {
         List<String> context = chatContextManager.getAllContextFromCache(chatId);
+        System.out.println("knowledge: " + knowledge);
         final List<Document> documents = new ArrayList<>();
         if (StringUtils.isBlank(knowledge)&&fileContent.isEmpty()) {
             knowledge = "base_knowledge";
@@ -334,13 +342,13 @@ public class ChatApi {
                     .similarityThreshold(0.8f)
                     .topK(18)
                     .build()));
-        } else {
+        }  else  {
             for (String split : knowledge.split(",")) {
                 var vectorStore = vectorStoreFactory.createVectorStore(split, split, embeddingModel);
                 List<Document> searchResults = vectorStore.similaritySearch(SearchRequest.builder()
                         .query(message)
                         .similarityThreshold(0.8f)
-                        .topK(18)
+                        .topK(15)
                         .build());
                 if(null==searchResults || searchResults.isEmpty())continue;
                 System.out.println("searchResults size: " + searchResults.size());
@@ -401,10 +409,14 @@ public class ChatApi {
                 });
     }
 
-    private Mono<String> intentMsgAsync(String message, List<String> contexts) {
+    private Mono<String> intentMsgAsync(String message, List<String> contexts,boolean isUploaded) {
+        if(isUploaded)return Mono.just("2");
         StringBuilder prompt = new StringBuilder();
         prompt.append("##你是一个智能意图识别助手。请根据用户的历史对话上下文和当前问题，判断其意图属于以下哪一类，只返回编号，不要解释：\n")
-                .append(IntentsEnum.print());
+                .append(IntentsEnum.print())
+                .append("##不允许添加其他意图，并且只返回提供意图类别对应的编号1、2或3 \n")
+                .append("##如果用户问题无法归类到以上意图，请返回0\n");
+                ;
         if (contexts != null && !contexts.isEmpty()) {
             prompt.append("##历史上下文如下：\n");
             // prompt.append(context).append("\n");
@@ -412,7 +424,7 @@ public class ChatApi {
         }
         prompt.append("##当前问题：").append(message).append("\n");
         Prompt promptWithModelChose = new Prompt(prompt.toString(), ChatOptions.builder()
-                .model("deepseek-r1:1.5b")
+                .model("qwen3:0.6b")
                 .build());
         return Mono.fromCallable(() -> ollamaChatModel.call(promptWithModelChose).getResult().getOutput().getText())
                 .subscribeOn(Schedulers.boundedElastic())

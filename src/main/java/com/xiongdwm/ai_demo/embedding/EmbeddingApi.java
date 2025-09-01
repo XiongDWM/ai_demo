@@ -1,6 +1,7 @@
 package com.xiongdwm.ai_demo.embedding;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -18,6 +19,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
@@ -88,8 +90,10 @@ public class EmbeddingApi {
 
     @PostMapping("/embedding/byDocPath")
     public ApiResponse<String> getEmbeddingByDocPath(@RequestParam("path") String path) {
+        FileLog fileLog = fileLogService.getByFilePath(path);
+        if(fileLog == null) return ApiResponse.error("File not found for the given path.");
         try {
-            KnowledgeBase knowledgeBase = fileLogService.getByFilePath(path).getKnowledgeBase();
+            KnowledgeBase knowledgeBase = fileLog.getKnowledgeBase();
             if (knowledgeBase == null) {
                 return ApiResponse.error("Knowledge base not found for the given file path.");
             }
@@ -100,26 +104,35 @@ public class EmbeddingApi {
             List<String> list = WordSplitHelper.splitByParagraphs(path);
             VectorStore myVectorStore = vectorStoreFactory.createVectorStore(tag, tag,
                     embeddingModel);
+            var sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            var date = sdf.format(new Date());
             List<Document> documents = list.parallelStream()
-                    .map(text -> new Document(text, Map.of("subdivision", "pro"))).collect(Collectors.toList());
+                    .map(text -> new Document(text, Map.of("date",date))).collect(Collectors.toList());
             System.out.println("documents: "+documents.size());
             myVectorStore.add(documents);
+            fileLog.setProcessingState(FileLog.ProcessingState.COMPLETED);
+            fileLogService.saveFileLog(fileLog);
         } catch (Exception e) {
-            e.printStackTrace();
+            fileLog.setProcessingState(FileLog.ProcessingState.FAILED);
+            fileLogService.saveFileLog(fileLog);
+            return ApiResponse.error("Error processing file: " + e.getLocalizedMessage());
         }
         return ApiResponse.success("File processed successfully.");
     }
 
     @PostMapping(value = "/embedding/upload", consumes = "multipart/form-data", produces = "application/json")
-    public Mono<ApiResponse<String>> upload(@RequestPart("file") FilePart filePart,@RequestParam("knowledgeBaseId")Long knowledgeBaseId) {
+    public Mono<ApiResponse<String>> upload(@RequestPart("file") FilePart filePart,@RequestParam("knowledgeBaseId")Long knowledgeBaseId,@RequestHeader("Authorization") String token) {
         String filePath = uploadPath + File.separator + filePart.filename();
+        String subfix= filePart.filename().substring(filePart.filename().lastIndexOf(".")+1).toLowerCase();
+        if(!subfix.equals("doc")&&!subfix.equals("docx"))return Mono.just(ApiResponse.error("目前只支持doc和docx格式的文件"));
         FileLog fileLog = new FileLog();
+        String username = token.split("-")[0];
         fileLog.setId(0L);
         fileLog.setFileName(filePart.filename());
         fileLog.setFilePath(filePath);
         fileLog.setUploadTime(new Date());
         fileLog.setKnowledgeBaseId(knowledgeBaseId);
-        fileLog.setFaculty(""); //之后从userToken里面取
+        fileLog.setFaculty(username); //之后从userToken里面取
         fileLogService.saveFileLog(fileLog);
         File dest = new File(filePath);
         return filePart.transferTo(dest)
