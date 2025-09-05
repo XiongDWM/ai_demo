@@ -90,8 +90,8 @@ public class AgentApi {
                 String conversationId = chatId + "-" + System.currentTimeMillis();
 
                 ChatOptions chatOption = ToolCallingChatOptions.builder()
-                                .model("qwen3:4b")
-                                // .model("nemotron-mini:4b")
+                                // .model("qwen3:4b")
+                                .model("nemotron-mini:4b")
                                 .toolCallbacks(toolCallbacks)
                                 .build();
                 Prompt prompt = new Prompt(sb.toString(), chatOption);
@@ -127,20 +127,19 @@ public class AgentApi {
         @PostMapping("/agent/test/chat")
         public Mono<String> testChat(@RequestParam(name = "message") String message,
                         @RequestHeader(value = "chat-id", required = false) String chatId) {
-                 ToolCallback[] toolCallbacks = ToolCallbacks.from(fiberTool, embeddingTool, dataBaseTool);
+                 ToolCallback[] toolCallbacks = ToolCallbacks.from(fiberTool);
                 StringBuilder sb = new StringBuilder();
                 sb.append("##你是一名智能助手 \n");
                 sb.append("##请调用工具来回答用户的问题 \n");
                 sb.append("##请分步思考，合理拆解用户的问题，并在每一步根据需要调用合适的工具。\n");
                 sb.append("##每一步都要说明意图、工具、参数和预期结果 \n");
                 sb.append("##可以多步调用多个工具，直到完成任务目标。\n");
+                sb.append("请务必等待工具返回结果，并且直接引用工具结果进行推理和回答\n");
                 sb.append("##如果无法调用工具，请直接用问题作为回答:"+message+" \n");
                 // sb.append("##注意禁止重复调用同一个工具：如果工具已经返回了明确的结果，请直接用该结果继续推理或回答，不要再次调用该工具。");
                 sb.append("##问题如下: \n").append(message).append("\n");
                 ChatModel chatModel = OllamaChatModel.builder().ollamaApi(OllamaApi.builder().build()).build();
                 String conversationId = chatId + "-" + System.currentTimeMillis();
-                var tn=Thread.currentThread().getName();
-                System.out.println(tn);
                 ChatOptions chatOption = ToolCallingChatOptions.builder()
                                 .model("qwen3:4b")
                                 // .model("nemotron-mini:4b")
@@ -151,7 +150,7 @@ public class AgentApi {
                                 .prompt(prompt)
                                 .call().content();
                 var toolCallsResult=ChatUtils.extractAnswerOnly(response);
-                System.out.println("工具结果："+toolCallsResult);
+                System.out.println("工具结果："+response);
                 return Mono.just(response);
         }
         @PostMapping("/agent/chat/evaluate")

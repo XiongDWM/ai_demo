@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -100,6 +101,10 @@ public class MultiModalApi {
                         cache.put(name, fullAnswer);
                     }
                 });
+    }
+    @PostMapping("/streaming/port/reg")
+    public void portReg(@RequestParam("name") String name) throws IOException {
+        
     }
 
     @GetMapping(value = "/picture/ocr/content")

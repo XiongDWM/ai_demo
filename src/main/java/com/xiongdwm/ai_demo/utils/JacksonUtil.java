@@ -62,6 +62,10 @@ public class JacksonUtil {
         return objectMapper.valueToTree(map);
     }
 
+    public static String mapToJsonString(Map<String, Object> map) {
+        return toJsonString(mapToNode(map)).orElse("");
+    }
+
     public static <T> List<T> fromJsonToList(String json, Class<T> clazz) throws IOException {
         return objectMapper.readValue(json, objectMapper.getTypeFactory().constructCollectionType(List.class, clazz));
     }
