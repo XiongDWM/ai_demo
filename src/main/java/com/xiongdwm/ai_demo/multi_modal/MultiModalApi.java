@@ -13,14 +13,20 @@ import org.springframework.ai.ollama.api.OllamaModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.xiongdwm.ai_demo.utils.cache.CacheHandler;
 import com.xiongdwm.ai_demo.utils.cache.LRUCache;
+import com.xiongdwm.ai_demo.utils.global.ApiResponse;
+import com.xiongdwm.ai_demo.utils.opencv.PortDetector;
+
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
 
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -102,9 +108,29 @@ public class MultiModalApi {
                     }
                 });
     }
-    @PostMapping("/streaming/port/reg")
-    public void portReg(@RequestParam("name") String name) throws IOException {
-        
+
+    @PostMapping(value="/picture/opencv/odnCheck" , consumes = "multipart/form-data",produces = "application/json")
+    public ApiResponse<String> odnCheck(@RequestPart("file") FilePart filePart, @RequestParam("roi") String roi) {
+        System.out.println(roi);
+        System.out.println(filePart.filename());
+        var roiValues = roi.split(",");
+
+
+        double x1 = Double.parseDouble(roiValues[0]);
+        double y1 = Double.parseDouble(roiValues[1]);
+        double x2 = Double.parseDouble(roiValues[2]);
+        double y2 = Double.parseDouble(roiValues[3]);
+
+        try {
+            File tempFile = File.createTempFile("upload-", "-" + filePart.filename());
+            filePart.transferTo(tempFile).block();
+            String imagePath = tempFile.getAbsolutePath();
+            var result=PortDetector.detectRedPorts(imagePath, 12, 1, x1, y1, x2, y2).toString();
+            return ApiResponse.success(result);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return ApiResponse.error("Error processing file: " + e.getMessage());
+        }
     }
 
     @GetMapping(value = "/picture/ocr/content")
@@ -126,11 +152,15 @@ public class MultiModalApi {
                 .media(List.of(new Media(MimeTypeUtils.IMAGE_JPEG, resource)))
                 .build();
         StringBuilder fullAnswerBuilder = new StringBuilder();
-        Flux<ChatResponse> stream = model.stream(new Prompt(userMessage, ChatOptions.builder().model("minicpm-v:8b")
+        Flux<ChatResponse> stream = model.stream(new Prompt(userMessage, ChatOptions.builder()
+                .model("qwen2.5vl:7b")
                 .temperature(0.1)
                 .maxTokens(4096)
                 .build()));
-        return stream.map(chatResp -> chatResp.getResult().getOutput().getText().trim())
+        return stream.map(chatResp -> {
+                    String text = chatResp.getResult().getOutput().getText();
+                    return text != null ? text.trim() : "";
+                })
                 .doOnNext(chunk -> {
                     fullAnswerBuilder.append(chunk);
                 })

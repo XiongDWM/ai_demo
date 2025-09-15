@@ -36,7 +36,15 @@ src/main/
 ### VS Code ###
 .vscode/
 
-src/main/java/com/xiongdwm/ai_demo/webapp/entities/*.java
-
-!src/main/java/com/xiongdwm/ai_demo/webapp/entities/FileLog.java
-!src/main/java/com/xiongdwm/ai_demo/webapp/entities/Test.java
+# src/main/java/com/xiongdwm/ai_demo/webapp/entities/*.java
+.DS_Store
+src/main/.DS_Store
+src/main//java/.DS_Store
+src/main/java/com/.DS_Store
+src/main/java/com/xiongdwm/.DS_Store
+# !src/main/java/com/xiongdwm/ai_demo/webapp/entities/FileLog.java
+# !src/main/java/com/xiongdwm/ai_demo/webapp/entities/Test.java
+.DS_Store
+.DS_Store
+src/.DS_Store
+src/main/java/com/xiongdwm/ai_demo/.DS_Store

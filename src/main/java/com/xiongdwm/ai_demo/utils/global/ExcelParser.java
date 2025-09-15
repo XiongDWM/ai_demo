@@ -150,7 +150,8 @@ public class ExcelParser {
         ExcelParser parser = new ExcelParser();
         Map<String, String> result = parser.parseExcelFile("/Users/xiong/Files/ss/系统输出报表/铁塔.xlsx");
         System.out.println(result);
-
+        var i=Math.max(1,7);
+        System.out.println(i);
     }
 
 }

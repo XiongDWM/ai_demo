@@ -43,7 +43,7 @@ dependencies {
 	implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.1'
 	implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
 	implementation 'org.apache.poi:poi-ooxml:5.4.0'
-	implementation 'org.bytedeco:javacv-platform:1.5.10'
+	implementation 'org.bytedeco:javacv-platform:1.5.12'
 	implementation 'com.squareup.okhttp3:okhttp:5.1.0'
 
 	runtimeOnly 'com.mysql:mysql-connector-j'
