@@ -26,8 +26,9 @@ import com.xiongdwm.ai_demo.utils.cache.LRUCache;
 import com.xiongdwm.ai_demo.utils.global.ApiResponse;
 import com.xiongdwm.ai_demo.utils.opencv.PortDetector;
 
-import io.swagger.v3.oas.annotations.parameters.RequestBody;
+import io.micrometer.common.lang.Nullable;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 
@@ -110,26 +111,36 @@ public class MultiModalApi {
     }
 
     @PostMapping(value="/picture/opencv/odnCheck" , consumes = "multipart/form-data",produces = "application/json")
-    public ApiResponse<String> odnCheck(@RequestPart("file") FilePart filePart, @RequestParam("roi") String roi) {
-        System.out.println(roi);
-        System.out.println(filePart.filename());
-        var roiValues = roi.split(",");
-
-
-        double x1 = Double.parseDouble(roiValues[0]);
-        double y1 = Double.parseDouble(roiValues[1]);
-        double x2 = Double.parseDouble(roiValues[2]);
-        double y2 = Double.parseDouble(roiValues[3]);
-
+    public ApiResponse<Object> odnCheck(@RequestPart("file") FilePart filePart, @Nullable @RequestParam("roi") String roi) {
+        if(StringUtils.isBlank(roi)) {
+            roi = "0,0,0,0";
+        }    
         try {
-            File tempFile = File.createTempFile("upload-", "-" + filePart.filename());
+            var roiValues = roi.split(",");
+            if (roiValues.length != 4) {
+                return ApiResponse.error("ROI format error!!");
+            }
+
+            double x1 = Double.parseDouble(roiValues[0]);
+            double y1 = Double.parseDouble(roiValues[1]);
+            double x2 = Double.parseDouble(roiValues[2]);
+            double y2 = Double.parseDouble(roiValues[3]);
+
+            File tempFile = File.createTempFile("opencv-", System.currentTimeMillis() + "-" + filePart.filename());
             filePart.transferTo(tempFile).block();
             String imagePath = tempFile.getAbsolutePath();
-            var result=PortDetector.detectRedPorts(imagePath, 12, 1, x1, y1, x2, y2).toString();
+            
+            var result = PortDetector.detectRedPorts(imagePath, 12, x1, y1, x2, y2);
+            tempFile.deleteOnExit();
             return ApiResponse.success(result);
+        } catch (NumberFormatException e) {
+            return ApiResponse.error("ROI coordinates format error, please ensure all coordinates are valid numbers");
         } catch (IOException e) {
             e.printStackTrace();
-            return ApiResponse.error("Error processing file: " + e.getMessage());
+            return ApiResponse.error("File processing failed: " + e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("process failed: " + e.getMessage());
         }
     }
 
