@@ -150,6 +150,7 @@ public class AgentApi {
                                 .prompt(prompt)
                                 .call().content();
                 var toolCallsResult=ChatUtils.extractAnswerOnly(response);
+                System.out.println(toolCallsResult);
                 System.out.println("工具结果："+response);
                 return Mono.just(response);
         }
