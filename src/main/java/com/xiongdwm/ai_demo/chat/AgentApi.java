@@ -30,6 +30,7 @@ import com.xiongdwm.ai_demo.utils.JacksonUtil;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+
 @RestController
 public class AgentApi {
 
@@ -42,6 +43,7 @@ public class AgentApi {
 
         @Autowired
         private OllamaChatModel ollamaChatModel;
+        
 
         private final WebClient webClient = WebClient.create("http://192.168.0.77:18081");
 

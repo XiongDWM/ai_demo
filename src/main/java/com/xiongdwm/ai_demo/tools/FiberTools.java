@@ -21,23 +21,12 @@ import reactor.core.scheduler.Schedulers;
 
 @Component
 public class FiberTools {
-    // @Autowired
-    // private CableService fiberService;
+
 
     private final WebClient webClient = WebClient.create("http://192.168.0.77:18081");
     @Autowired
     private HttpClientManager httpClientManager;
 
-    // @Tool(name = "findCableByFromStationName", description = "根据起始站名称查询光缆信息")
-    // public List<Fiber> findCableByFromStationName(
-    // @ToolParam(required = true, description = "起始站名称") String fromStationName) {
-    // System.out.println("findCableByFromStationName: " + fromStationName);
-    // List<Fiber> fibers = fiberService.getCableByFromStationName(fromStationName);
-    // if (fibers.isEmpty())
-    // return Collections.emptyList();
-    // System.out.println(fibers.size());
-    // return fibers;
-    // }
 
     @Tool(name = "currentDate", description = "用于获取当前日期")
     public String getCurrentTime() {
