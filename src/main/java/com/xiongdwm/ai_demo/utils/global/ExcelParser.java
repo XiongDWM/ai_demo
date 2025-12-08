@@ -39,7 +39,7 @@ public class ExcelParser {
                 int colIndex = CellReference.convertColStringToIndex(colLetter);
                 List<String> columnValues = StreamSupport.stream(sheet.spliterator(), true)
                         .skip(1)
-                        .limit(20)
+//                        .limit(20)
                         .map(row -> {
                             Cell cell = row.getCell(colIndex);
                             if (cell != null) {
@@ -84,9 +84,7 @@ public class ExcelParser {
                     return "double"; 
                 }
             case BOOLEAN:
-                return "tinyint"; 
-            case FORMULA:
-                return "formula";
+                return "tinyint";
             default:
                 return "varchar"; 
         }

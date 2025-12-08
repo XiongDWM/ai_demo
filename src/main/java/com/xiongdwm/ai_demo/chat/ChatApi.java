@@ -3,6 +3,7 @@ package com.xiongdwm.ai_demo.chat;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.ai.chat.model.ChatResponse;
@@ -256,9 +257,7 @@ public class ChatApi {
         StringBuilder resultBuilder = new StringBuilder();
         return ollamaChatModel.stream(new Prompt(answerPrompt.toString()))
                 .map(chatResp -> chatResp.getResult().getOutput().getText())
-                .doOnNext(chunk -> {
-                    resultBuilder.append(chunk);
-                }).doOnComplete(() -> {
+                .doOnNext(resultBuilder::append).doOnComplete(() -> {
                     String result = resultBuilder.toString();
                     var answer = ChatUtils.extractAnswerOnly(result);
                     if (!answer.isEmpty()) {
@@ -337,11 +336,11 @@ public class ChatApi {
         if (StringUtils.isBlank(knowledge)&&fileContent.isEmpty()) {
             knowledge = "base_knowledge";
             var vectorStore = vectorStoreFactory.createVectorStore("base_knowledge", "base_knowledge", embeddingModel);
-            documents.addAll(vectorStore.similaritySearch(SearchRequest.builder()
+            documents.addAll(Objects.requireNonNull(vectorStore.similaritySearch(SearchRequest.builder()
                     .query(message)
                     .similarityThreshold(0.8f)
-                    .topK(18)
-                    .build()));
+                    .topK(10)
+                    .build())));
         }  else  {
             for (String split : knowledge.split(",")) {
                 var vectorStore = vectorStoreFactory.createVectorStore(split, split, embeddingModel);
@@ -353,17 +352,14 @@ public class ChatApi {
                 if(null==searchResults || searchResults.isEmpty())continue;
                 System.out.println("searchResults size: " + searchResults.size());
                 documents.addAll(searchResults);
-                List<Document> sortedDocuments = documents.stream().sorted((d1, d2) -> {
-                    return Double.compare(d2.getScore(), d1.getScore());
-                }).toList();
-                List<Document> topDocuments = sortedDocuments.size() > 18 ? sortedDocuments.subList(0, 18) : sortedDocuments;
+                List<Document> sortedDocuments = documents.stream().sorted((d1, d2) -> Double.compare(d2.getScore(), d1.getScore())).toList();
+                List<Document> topDocuments = sortedDocuments.size() > 10 ? sortedDocuments.subList(0, 10) : sortedDocuments;
                 documents.clear();
                 documents.addAll(topDocuments);
                 System.out.println("knowledge size: " + documents.size());
             }
         }
 
-        System.out.println("knowledge size: " + documents.size());
         if (!fileContent.isEmpty()) {
             fileContent.forEach(c -> documents.add(new Document(c)));
         }
@@ -381,7 +377,6 @@ public class ChatApi {
         }
         if (!knowledge.isEmpty()) {
             promptBuilder.append("##你需要结合知识库作出合理、自然的回答\n");
-            promptBuilder.append("##仅使用与问题相关的知识库内容，忽略无关内容\n");
             promptBuilder.append("##如果知识库内容无法完全回答，可以补充你自己的知识。\n");
             promptBuilder.append("##知识库如下：\n");
             for (Document doc : documents) {
@@ -395,9 +390,7 @@ public class ChatApi {
         // 回答并缓存问答
         StringBuilder fullAnswerBuilder = new StringBuilder();
         return stream.map(chatResp -> chatResp.getResult().getOutput().getText())
-                .doOnNext(chunk -> {
-                    fullAnswerBuilder.append(chunk);
-                })
+                .doOnNext(fullAnswerBuilder::append)
                 .doOnComplete(() -> {
                     // 在流完成后存储完整的问答
                     String fullAnswer = ChatUtils.extractAnswerOnly(fullAnswerBuilder.toString());
@@ -416,7 +409,6 @@ public class ChatApi {
                 .append(IntentsEnum.print())
                 .append("##不允许添加其他意图，并且只返回提供意图类别对应的编号1、2或3 \n")
                 .append("##如果用户问题无法归类到以上意图，请返回0\n");
-                ;
         if (contexts != null && !contexts.isEmpty()) {
             prompt.append("##历史上下文如下：\n");
             // prompt.append(context).append("\n");
@@ -431,7 +423,7 @@ public class ChatApi {
                 .doOnCancel(() -> {
                     System.out.println("取消意图识别");
                 })
-                .map(c->ChatUtils.extractAnswerOnly(c));
+                .map(ChatUtils::extractAnswerOnly);
     }
 
     // SQL生成流式收集
@@ -465,7 +457,7 @@ public class ChatApi {
                 .map(chatResp -> chatResp.getResult().getOutput().getText())
                 .reduce(new StringBuilder(), StringBuilder::append)
                 .map(StringBuilder::toString)
-                .map(c->ChatUtils.extractAnswerOnly(c))
+                .map(ChatUtils::extractAnswerOnly)
                 .doOnSuccess(sql -> {
                     if (StringUtils.isNotBlank(sql)) {
                         chatContextManager.putContextToCache(topic, message, sql);
