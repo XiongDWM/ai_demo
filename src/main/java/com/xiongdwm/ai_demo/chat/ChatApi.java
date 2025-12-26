@@ -1,6 +1,5 @@
 package com.xiongdwm.ai_demo.chat;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -26,6 +25,10 @@ import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
 import com.xiongdwm.ai_demo.utils.global.ApiResponse;
 import com.xiongdwm.ai_demo.utils.global.GlobalPrompt;
 import com.xiongdwm.ai_demo.utils.global.WordSplitHelper;
+import com.xiongdwm.ai_demo.utils.global.HierarchicalWordSplitHelper;
+import com.xiongdwm.ai_demo.utils.global.SectionNode;
+import com.xiongdwm.ai_demo.ingest.ImageCaptionClient;
+import com.xiongdwm.ai_demo.utils.global.Neo4jIndexer;
 
 import io.micrometer.common.util.StringUtils;
 import jakarta.persistence.EntityManager;
@@ -47,6 +50,12 @@ public class ChatApi {
     private Neo4jVectorStoreFactory vectorStoreFactory;
     @PersistenceContext
     private EntityManager entityManager;
+    @Autowired
+    private ImageCaptionClient imageCaptionClient;
+    @Autowired
+    private Neo4jIndexer neo4jIndexer;
+    @Autowired
+    private HierarchicalWordSplitHelper hierarchicalWordSplitHelper;
 
     @PostMapping("/streaming/chat/baseKnowledge")
     public Flux<String> sinkFlux(@RequestParam("message") String message,
@@ -164,13 +173,26 @@ public class ChatApi {
                             case "2":
                                 sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】知识库问答中...\n", conversationId)).get()
                                         + "</chunk>");
-                                List<String> fileContent = new ArrayList<>();
+                                List<Document> fileContent = new ArrayList<>();
                                 if (fileName != null && !fileName.isEmpty()) {
                                     sink.next(JacksonUtil
                                             .toJsonString(new ConversationContext("【系统】正在解析文件内容...", conversationId))
                                             .get() + "</chunk>");
                                     try {
-                                        fileContent = WordSplitHelper.splitByParagraphs(fileName);
+                                        // 使用分层拆分器实例方法，保持标题-子项结构并提取图片
+                                        var sections = hierarchicalWordSplitHelper.parseHierarchy(fileName,
+                                                "upload/images", imageCaptionClient, 1200);
+                                        // 将 SectionNode 转 Document 并保留 imageUrls 在 metadata
+                                        for (SectionNode s : sections) {
+                                            var text = (s.getTitle() == null ? "" : s.getTitle()) + "\n" + (s.getText() == null ? "" : s.getText());
+                                            var meta = new java.util.HashMap<String, Object>();
+                                            if (s.getImageUrls() != null && !s.getImageUrls().isEmpty()) meta.put("imageUrls", s.getImageUrls());
+                                            if (s.getSteps() != null && !s.getSteps().isEmpty()) meta.put("steps", s.getSteps());
+                                            meta.put("sectionId", s.getId());
+                                            meta.put("level", s.getLevel());
+                                            var doc = new Document(text, meta);
+                                            fileContent.add(doc);
+                                        }
                                         sink.next(JacksonUtil
                                                 .toJsonString(new ConversationContext("【系统】已解析文件内容", conversationId))
                                                 .get() + "</chunk>");
@@ -205,7 +227,6 @@ public class ChatApi {
                                 sink.next(JacksonUtil.toJsonString(new ConversationContext("意图识别失败，请重试", conversationId))
                                         .get() + "</chunk>");
                                 sink.complete();
-                                return;
                         }
                     }, error -> {
                         error.printStackTrace();
@@ -328,7 +349,7 @@ public class ChatApi {
         // Prompt(promptBuilder.toString())).map(resp->resp.getResult().getOutput().getText());
     }
 
-    private Flux<String> streamingChatWithBaseKnowledge(String message, String chatId, List<String> fileContent,
+    private Flux<String> streamingChatWithBaseKnowledge(String message, String chatId, List<Document> fileContent,
             String knowledge) {
         List<String> context = chatContextManager.getAllContextFromCache(chatId);
         System.out.println("knowledge: " + knowledge);
@@ -361,7 +382,7 @@ public class ChatApi {
         }
 
         if (!fileContent.isEmpty()) {
-            fileContent.forEach(c -> documents.add(new Document(c)));
+            documents.addAll(fileContent);
         }
 
         var promptBuilder = new StringBuilder();
@@ -377,8 +398,8 @@ public class ChatApi {
         }
         if (!knowledge.isEmpty()) {
             promptBuilder.append("##你需要结合知识库作出合理、自然的回答\n");
-            promptBuilder.append("##如果知识库内容无法完全回答，可以补充你自己的知识。\n");
-            promptBuilder.append("##知识库如下：\n");
+            promptBuilder.append("##如果知识库内容无法完全回答，可以补充常识。\n");
+            promptBuilder.append("##知识库内容如下：\n");
             for (Document doc : documents) {
                 promptBuilder.append("##").append(doc.getText()).append("\n");
             }
@@ -451,7 +472,7 @@ public class ChatApi {
                 .append(message).append("\n")
                 .append("###SQL:\n");
         Prompt promptWithModelChose = new Prompt(prompt.toString(), ChatOptions.builder()
-                .model("qwen3:4b")
+                .model("qwen3:1.7b")
                 .build());
         return ollamaChatModel.stream(promptWithModelChose)
                 .map(chatResp -> chatResp.getResult().getOutput().getText())

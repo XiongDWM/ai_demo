@@ -65,6 +65,11 @@ public class FileLogServiceImpl implements FileLogService{
         return fileLogRepo.findOneByFilePath(path).orElse(null);
     }
 
+    @Override
+    public KnowledgeBase getKnowledgeBaseByTag(String tag) {
+        return knowledgeBaseRepository.findOneByTag(tag).orElse(null);
+    }
+
 
 
     

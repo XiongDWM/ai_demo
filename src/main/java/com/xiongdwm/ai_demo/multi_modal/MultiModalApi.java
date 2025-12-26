@@ -164,7 +164,7 @@ public class MultiModalApi {
                 .build();
         StringBuilder fullAnswerBuilder = new StringBuilder();
         Flux<ChatResponse> stream = model.stream(new Prompt(userMessage, ChatOptions.builder()
-                .model("qwen2.5vl:7b")
+                .model("qwen2.5vl:3b")
                 .temperature(0.1)
                 .maxTokens(4096)
                 .build()));

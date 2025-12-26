@@ -35,7 +35,7 @@ public class FileLogController {
     @Autowired
     private FileLogService fileLogService;
     @Autowired
-    Neo4jVectorStoreFactory vectorStore;
+    private Neo4jVectorStoreFactory vectorStore;
     @Value("${file.upload.path}")
     private String uploadPath;
 

@@ -17,4 +17,6 @@ public interface FileLogService {
     
     FileLog getByFilePath(String path); 
     
+    KnowledgeBase getKnowledgeBaseByTag(String tag);
+
 }
