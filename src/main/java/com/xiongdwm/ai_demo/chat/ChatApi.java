@@ -72,12 +72,12 @@ public class ChatApi {
             chatContextManager.registerSink(conversationId, sink);
             if (message == null || message.isEmpty()) {
                 sink.next(
-                        JacksonUtil.toJsonString(new ConversationContext("消息不能为空", conversationId)).get() + "</chunk>");
+                        JacksonUtil.toJsonString(new ConversationContext("消息不能为空", conversationId)).orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                 sink.complete();
                 return;
             }
             if (chatId == null || chatId.isEmpty()) {
-                sink.next(JacksonUtil.toJsonString(new ConversationContext("chat-id不能为空", conversationId)).get()
+                sink.next(JacksonUtil.toJsonString(new ConversationContext("chat-id不能为空", conversationId)).orElse(ConversationContext.getEmptyContextJsonString())
                         + "</chunk>");
                 sink.complete();
                 return;
@@ -85,7 +85,7 @@ public class ChatApi {
             var isUploaded = (fileName != null && !fileName.isEmpty())||(pictureName != null && !pictureName.isEmpty());
             var contexts = chatContextManager.getLatestWithIntents(chatId);
             System.out.println("上轮对话：" + contexts);
-            sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】意图识别中...", conversationId)).get()
+            sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】意图识别中...", conversationId)).orElse(ConversationContext.getEmptyContextJsonString())
                     + "</chunk>");
             System.out.println("意图识别中...");
             AtomicBoolean cancelled = new AtomicBoolean(false);
@@ -93,7 +93,7 @@ public class ChatApi {
             Disposable heartbeat = Flux.interval(java.time.Duration.ofSeconds(10))
                  .subscribe(tick -> {
                     sink.next(JacksonUtil.toJsonString(
-                    new ConversationContext("", conversationId)).get() + "</chunk>");
+                    new ConversationContext("", conversationId)).orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
             });
             sink.onCancel(() -> {
                 cancelled.set(true);
@@ -111,73 +111,74 @@ public class ChatApi {
             disposable[0] = intentMsgAsync(message, contexts,isUploaded)
                     .subscribe(intent -> {
                         sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】识别意图：" + intent, conversationId))
-                                .get() + "</chunk>");
+                                .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                         System.out.println("已识别意图：" + intent);
                         var topicId = chatId + "-" + intent;
                         switch (intent) {
                             case "1":
                                 sink.next(JacksonUtil
-                                        .toJsonString(new ConversationContext("【系统】数据库结构检索中...", conversationId)).get()
+                                        .toJsonString(new ConversationContext("【系统】数据库结构检索中...", conversationId)).orElse(ConversationContext.getEmptyContextJsonString())
                                         + "</chunk>");
                                 List<Document> results = dbDescriptionGenerate(message);
                                 if (results.isEmpty()) {
                                     sink.next(JacksonUtil
                                             .toJsonString(new ConversationContext("【系统】未找到相关数据库结构描述", conversationId))
-                                            .get() + "</chunk>");
+                                            .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                     sink.complete();
                                     return;
                                 }
                                 sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】SQL生成中", conversationId))
-                                        .get() + "</chunk>");
+                                        .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                 System.out.println("SQL生成中...");
                                 sqlGenerateAsync(results, message, topicId)
                                         .subscribe(sql -> {
                                             sink.next(JacksonUtil
                                                     .toJsonString(
                                                             new ConversationContext("【系统】已生成SQL：" + sql, conversationId))
-                                                    .get() + "</chunk>");
+                                                    .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                             System.out.println("已生成SQL：" + sql);
                                             if (sql.isEmpty()) {
                                                 sink.next(JacksonUtil
                                                         .toJsonString(
                                                                 new ConversationContext("【系统】生成SQL失败", conversationId))
-                                                        .get() + "</chunk>");
+                                                        .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                                 sink.complete();
                                                 return;
                                             }
                                             sink.next(JacksonUtil
                                                     .toJsonString(
                                                             new ConversationContext("【系统】SQL执行中...", conversationId))
-                                                    .get() + "</chunk>");
+                                                    .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                             System.out.println("SQL执行中...");
                                             String sqlResult = sqlExecute(sql);
                                             sink.next(JacksonUtil
                                                     .toJsonString(new ConversationContext("【系统】SQL执行完成", conversationId))
-                                                    .get() + "</chunk>");
+                                                    .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                             System.out.println("SQL执行完成");
                                             sink.next(JacksonUtil
                                                     .toJsonString(
                                                             new ConversationContext("【系统】正在回答问题...", conversationId))
-                                                    .get() + "</chunk>");
+                                                    .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                             dbAgentLLMAnswer(results, sqlResult, message, topicId)
                                                     .doOnNext(chunk -> {
                                                         sink.next(JacksonUtil
                                                                 .toJsonString(
                                                                         new ConversationContext(chunk, conversationId))
-                                                                .get() + "</chunk>");
+                                                                .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                                     })
                                                     .doOnComplete(sink::complete)
                                                     .subscribe();
                                         });
                                 break;
                             case "2":
-                                sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】知识库问答中...\n", conversationId)).get()
+                                sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】知识库问答中...\n", conversationId))
+                                        .orElse(ConversationContext.getEmptyContextJsonString())
                                         + "</chunk>");
                                 List<Document> fileContent = new ArrayList<>();
                                 if (fileName != null && !fileName.isEmpty()) {
                                     sink.next(JacksonUtil
                                             .toJsonString(new ConversationContext("【系统】正在解析文件内容...", conversationId))
-                                            .get() + "</chunk>");
+                                            .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                     try {
                                         // 使用分层拆分器实例方法，保持标题-子项结构并提取图片
                                         var sections = hierarchicalWordSplitHelper.parseHierarchy(fileName,
@@ -195,17 +196,17 @@ public class ChatApi {
                                         }
                                         sink.next(JacksonUtil
                                                 .toJsonString(new ConversationContext("【系统】已解析文件内容", conversationId))
-                                                .get() + "</chunk>");
+                                                .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                     } catch (Exception e) {
                                         sink.next(JacksonUtil.toJsonString(
                                                 new ConversationContext("文件解析失败：" + e.getMessage(), conversationId))
-                                                .get() + "</chunk>");
+                                                .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                     }
                                 }
                                 disposable[1] = streamingChatWithBaseKnowledge(message, topicId, fileContent,knowledge)
                                         .doOnNext(chunk -> {
                                             sink.next(JacksonUtil
-                                                    .toJsonString(new ConversationContext(chunk, conversationId)).get()
+                                                    .toJsonString(new ConversationContext(chunk, conversationId)).orElse(ConversationContext.getEmptyContextJsonString())
                                                     + "</chunk>");
                                         })
                                         .doOnComplete(sink::complete)
@@ -213,11 +214,11 @@ public class ChatApi {
                                 break;
                             case "3":
                                 sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】闲聊中...", conversationId))
-                                        .get() + "</chunk>");
+                                        .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                 disposable[1] = streamingChat(message, topicId)
                                         .doOnNext(chunk -> {
                                             sink.next(JacksonUtil
-                                                    .toJsonString(new ConversationContext(chunk, conversationId)).get()
+                                                    .toJsonString(new ConversationContext(chunk, conversationId)).orElse(ConversationContext.getEmptyContextJsonString())
                                                     + "</chunk>");
                                         })
                                         .doOnComplete(sink::complete)
@@ -225,12 +226,12 @@ public class ChatApi {
                                 break;
                             default:
                                 sink.next(JacksonUtil.toJsonString(new ConversationContext("意图识别失败，请重试", conversationId))
-                                        .get() + "</chunk>");
+                                        .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                 sink.complete();
                         }
                     }, error -> {
                         error.printStackTrace();
-                        sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】系统异常", conversationId)).get()
+                        sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】系统异常", conversationId)).orElse(ConversationContext.getEmptyContextJsonString())
                                 + "</chunk>");
                         sink.complete();
                         return;
@@ -451,7 +452,7 @@ public class ChatApi {
     private Mono<String> sqlGenerateAsync(List<Document> results, String message, String topicId) {
         var topic = "sql-" + topicId;
         StringBuilder prompt = new StringBuilder();
-        prompt.append("###你是SQL生成助手。请根据下方数据库结构描述、用户问题以及上轮回答, 直接生成对应的SQL语句, 只输出SQL, 不要解释。\n")
+        prompt.append("###你是SQL生成助手。请根据下方数据库结构描述、用户问题以及上轮回答, 直接生成对应的SQL语句, 只输出SQL, 不允许解释。\n")
                 .append("###数据库结构描述：\n");
         for (Document doc : results) {
             prompt.append(doc.getText()).append("\n");

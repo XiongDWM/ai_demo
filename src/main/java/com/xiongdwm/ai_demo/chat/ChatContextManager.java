@@ -39,6 +39,32 @@ public class ChatContextManager {
                 .toList();
         return contextInQAFormat;
     }
+    public String getLastContextFromCache(String sessionId) {
+        LRUCache<String, String> cache = cacheHandler.getCache(sessionId, contextSize, 10 * 60 * 1000);
+        if (cache.isEmpty()) {
+            return null;
+        }
+        var context = cache.peek();
+        if (null == context) {
+            return null;
+        }
+        String question = context.getKey();
+        String answer = context.getValue();
+        return "上轮问题：" + question + "\n" + "上轮回答：" + answer + "\n";
+    }
+    public String getPreviousContextByCurrentQuestion(String sessionId, String question) {
+        LRUCache<String, String> cache = cacheHandler.getCache(sessionId, contextSize, 10 * 60 * 1000);
+        if (cache.isEmpty()) {
+            return null;
+        }
+
+        var context = cache.get(question);
+        if (null == context) {
+            return null;
+        }
+        String answer = context;
+        return "上轮回答：" + answer + "\n";
+    }
 
     public void registerSink(String conversationId, FluxSink<String> sink) {
         sinkMap.put(conversationId, sink);
@@ -53,7 +79,7 @@ public class ChatContextManager {
         var sink = sinkMap.get(conversationId);
         System.out.println(sinkMap);
         if (sink != null) {
-            sink.next(JacksonUtil.toJsonString(new ConversationContext(message, conversationId)).get());
+            sink.next(JacksonUtil.toJsonString(new ConversationContext(message, conversationId)).orElse(""));
             System.out.println("=====================================================================>>");
             sink.complete();
             sinkMap.remove(conversationId);

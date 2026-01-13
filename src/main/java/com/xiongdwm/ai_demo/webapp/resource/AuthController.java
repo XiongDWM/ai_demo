@@ -44,7 +44,6 @@ public class AuthController {
         }
         boolean hasPermission = authService.hasPermission(knowledge, username);
         if(!hasPermission) return ApiResponse.error("没有权限访问该知识库");
-        
         return ApiResponse.success("权限验证通过");
 
     }

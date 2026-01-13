@@ -3,6 +3,7 @@ package com.xiongdwm.ai_demo.chat;
 public class ChatUtils {
     
     public static String extractAnswerOnly(String text) {
+        if (text == null) return "";
         String[] lines = text.split("</think>");
         if (lines.length < 2)
             return "";

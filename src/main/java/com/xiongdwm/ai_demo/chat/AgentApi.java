@@ -78,14 +78,14 @@ public class AgentApi {
                         @RequestHeader(value = "chat-id", required = false) String chatId) {
                 ToolCallback[] toolCallbacks = ToolCallbacks.from(fiberTool, embeddingTool, dataBaseTool);
                 StringBuilder sb = new StringBuilder();
-                sb.append("##你是一名智能助手 \n");
-                sb.append("##请调用工具来回答用户的问题 \n");
+                sb.append("##你是一个智能体 \n");
+                sb.append("##系统会提供工具，必要时需要调用工具获取结果来回答用户的问题 \n");
                 sb.append("##请分步思考，合理拆解用户的问题，并在每一步根据需要调用合适的工具。\n");
                 sb.append("##每一步都要说明意图、工具、参数和预期结果 \n");
                 sb.append("##请勿重复调用工具，等待工具返回结果后再继续");
                 sb.append("##可以多步调用多个工具，直到完成任务目标。\n");
-                sb.append("##如果无法调用工具，请直接用问题作为回答:"+message+" \n");
-                // sb.append("##请直接返回工具调用的结果，不要添加其他内容 \n");
+                sb.append("##如果无法调用工具，返回：“无法调用工具” \n");
+                sb.append("##请直接返回工具调用的结果，不要添加其他内容 \n");
                 sb.append("##你需要按照规定格式返回结果，如下：\n");
                 sb.append("##问题如下: \n").append(message).append("\n");
                 ChatModel chatModel = OllamaChatModel.builder().ollamaApi(OllamaApi.builder().build()).build();
@@ -115,13 +115,11 @@ public class AgentApi {
                 
                 return ollamaChatModel.stream(promptOverAllPrompt)
                                 .map(chatResp -> chatResp.getResult().getOutput().getText())
-                                .doOnNext(chunk -> {
-                                        System.out.print(chunk);
-                                })
                                 .map(chunk -> {
                                     ConversationContext ctx = new ConversationContext(chunk, conversationId);
-                                    return JacksonUtil.toJsonString(ctx).get() + "</chunk>";
+                                    return JacksonUtil.toJsonString(ctx).orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>";
                                 })
+                                .doOnNext(System.out::print)
                                 .doOnCancel(() -> {
                                         System.out.println("回答取消");
                                 });

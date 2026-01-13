@@ -38,7 +38,7 @@ public class CacheHandler {
     public void removeCache(String name) {
         LRUCache<?,?>cache=caches.remove(name);
         if(null!=cache){
-            cache.shutdown();;
+            cache.shutdown();
         }
     }
 

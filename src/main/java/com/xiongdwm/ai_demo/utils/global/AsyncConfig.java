@@ -8,7 +8,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import reactor.core.scheduler.Scheduler;
 
-import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -70,7 +69,7 @@ public class AsyncConfig {
         return exec;
     }
 
-    @Bean
+    @Bean("aiScheduler")
     public Scheduler aiScheduler(ExecutorService aiExecutor){
         return reactor.core.scheduler.Schedulers.fromExecutorService(aiExecutor);
     }

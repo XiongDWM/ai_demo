@@ -1,5 +1,6 @@
 package com.xiongdwm.ai_demo.utils.config;
 
+import com.xiongdwm.ai_demo.utils.excepotion.ServiceException;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -29,7 +30,7 @@ public class Neo4jVectorStoreFactory {
                 .build();
     }
 
-    public void createVectorIndex(String index, String label, int dimension, String property, String similarity) {
+    public void createVectorIndex(String index, String label, int dimension, String property, String similarity) throws ServiceException {
         String cypher = String.format(
                 "CALL db.index.vector.createNodeIndex('%s','%s','%s', %d, '%s')",
                 index, label, property, dimension, similarity);
@@ -40,6 +41,7 @@ public class Neo4jVectorStoreFactory {
             });
         } catch (Exception e) {
             System.out.println("Neo4j 索引创建异常（可能已存在）: " + e.getMessage());
+            throw new ServiceException("Neo4j 索引创建异常（可能已存在）: " + e.getMessage());
         }
     }
 

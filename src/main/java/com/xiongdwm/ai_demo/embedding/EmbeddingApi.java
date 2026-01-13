@@ -2,12 +2,16 @@ package com.xiongdwm.ai_demo.embedding;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 import java.util.Date;
 
+import com.xiongdwm.ai_demo.ingest.EmbeddingService;
+import com.xiongdwm.ai_demo.webapp.entities.FAQ;
+import com.xiongdwm.ai_demo.webapp.service.FAQService;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -32,6 +36,8 @@ import com.xiongdwm.ai_demo.webapp.entities.KnowledgeBase;
 import com.xiongdwm.ai_demo.webapp.service.FileLogService;
 
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 @RestController
 public class EmbeddingApi {
@@ -41,6 +47,11 @@ public class EmbeddingApi {
     private Neo4jVectorStoreFactory vectorStoreFactory;
     @Autowired
     private FileLogService fileLogService;
+    @Autowired
+    private EmbeddingService embeddingService;
+    @Autowired
+    private FAQService faqService;
+
 
     @Value("${file.upload.path}")
     private String uploadPath;
@@ -77,15 +88,9 @@ public class EmbeddingApi {
 
     @PostMapping("/doc/search")
     public ApiResponse<List<Document>> searchDocument(@RequestParam("input") String input) {
-        VectorStore myVectorStore = vectorStoreFactory.createVectorStore("db_description", "db_description",
-                embeddingModel);
-        List<Document> results = myVectorStore.similaritySearch(SearchRequest.builder()
-                .query(input)
-                .topK(20)
-                .similarityThreshold(0.1)
-                .build());
+        var vectorStore=embeddingService.vectorStore("db_description", "db_description");
+        var results= embeddingService.searchDocuments(vectorStore,input,0.5,20);
         return ApiResponse.success(results);
-
     }
 
     @PostMapping("/embedding/byDocPath")
@@ -120,6 +125,49 @@ public class EmbeddingApi {
         return ApiResponse.success("File processed successfully.");
     }
 
+    @PostMapping("/qa/add")
+    public Mono<ApiResponse<String>> addQaPair(@RequestParam("tag")String tag,@RequestParam("question")String question,@RequestParam("answer")String answer){
+        var tagFAQ=tag+"_faq";
+        embeddingService.createIndex(tagFAQ, tagFAQ, 768, "embedding", "cosine");
+        return Mono.fromCallable(()->{
+            VectorStore vs = embeddingService.vectorStore(tagFAQ, tagFAQ);
+            var sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            var date = sdf.format(new Date());
+            String text = "问：" + question + "\n答：" + answer;
+            Map<String, Object> md = new HashMap<>();
+            md.put("type", "faq");
+            md.put("date", date);
+            var doc = new Document(text, md);
+            vs.add(List.of(doc));
+
+            KnowledgeBase kb = fileLogService.getKnowledgeBaseByTag(tag);
+            FAQ faq=new FAQ();
+            faq.setVectorNodeId(doc.getId());
+            faq.setDate(new Date());
+            faq.setQuestion(question);
+            faq.setAnswer(answer);
+            faq.setKnowledgeBaseId(kb.getId());
+            faqService.add(faq);
+            return ApiResponse.success("已写入FAQ问答");
+        }).subscribeOn(Schedulers.boundedElastic())
+                .onErrorResume(e->Mono.just(ApiResponse.error(e.getLocalizedMessage())));
+    }
+
+    @PostMapping("/qa/delete")
+    public ApiResponse<String>deleteQaPair(@RequestParam("vectorNodeId")String vnId,@RequestParam("tag")String tag){
+        var tagFAQ=tag+"_faq";
+        try {
+            VectorStore vs = embeddingService.vectorStore(tagFAQ, tagFAQ);
+
+            var idList=List.of(vnId);
+            vs.delete(idList);
+            faqService.deleteByVectorNodeId(vnId);
+            return ApiResponse.success("已删除FAQ问答");
+        } catch (Exception e) {
+            return ApiResponse.error("删除失败：" + e.getMessage());
+        }
+    }
+
     @PostMapping(value = "/embedding/upload", consumes = "multipart/form-data", produces = "application/json")
     public Mono<ApiResponse<String>> upload(@RequestPart("file") FilePart filePart,@RequestParam("knowledgeBaseId")Long knowledgeBaseId,@RequestHeader("Authorization") String token) {
         String filePath = uploadPath + File.separator + filePart.filename();
@@ -138,7 +186,7 @@ public class EmbeddingApi {
         return filePart.transferTo(dest)
                 .then(Mono.fromCallable(() -> {
                     List<String> list = WordSplitHelper.splitByParagraphs(filePath);
-                    list.stream().forEach(chunk->{
+                    list.forEach(chunk->{
                         System.out.println();
                         System.out.println("chunk: "+chunk);
                     });

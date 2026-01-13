@@ -41,6 +41,7 @@ public class FiberTools {
         String response = httpClientManager.post(ServerChosen.FIBER_SERVER_DEV_1, "/mcp/fiber/getIdByName")
                 .param(Map.of("name", fiberName))
                 .retrieve();
+
         System.out.println("接口返回：" + response);
         return response;
     }
@@ -51,6 +52,7 @@ public class FiberTools {
             @ToolParam(required = true, description = "站点名称") String stationName,
             @ToolParam(required = true, description = "故障距离（单位：米）") double distance) {
         System.out.println("locateGlitch: " + fiberName + ", " + stationName + ", " + distance);
+
         return "光缆" + fiberName + "距离高新局端" + distance + "米处故障的准确gps为：104.062728，30.63568596296296"
                 + "且根据推断，故障类型可能是纤芯劣化";
     }

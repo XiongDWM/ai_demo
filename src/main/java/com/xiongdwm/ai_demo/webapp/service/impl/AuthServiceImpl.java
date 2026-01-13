@@ -1,6 +1,7 @@
 package com.xiongdwm.ai_demo.webapp.service.impl;
 
 import java.util.List;
+import java.util.Objects;
 
 import org.springframework.stereotype.Service;
 
@@ -21,7 +22,7 @@ public class AuthServiceImpl implements AuthService {
         if (user == null) {
             return false; 
         }
-       return user.getKnowledgeBases().stream().filter(it->it.getId()==knowledgeBaseId).findAny().isPresent();
+       return user.getKnowledgeBases().stream().anyMatch(it-> Objects.equals(it.getId(), knowledgeBaseId));
     }
 
     @Override

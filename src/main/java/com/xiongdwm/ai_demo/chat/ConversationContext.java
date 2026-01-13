@@ -47,4 +47,12 @@ public class ConversationContext {
     public void setMessageType(MessageType messageType) {
         this.messageType = messageType;
     }
+
+    public static String getEmptyContextJsonString(){
+        return "{\"conversationId\":\"\",\"content\":\"\",\"messageType\":\"TEXT\"}";
+    }
+
+    public static ConversationContext getEmptyContext(){
+        return new ConversationContext();
+    }
 }

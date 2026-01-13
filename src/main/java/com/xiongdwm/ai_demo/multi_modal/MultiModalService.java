@@ -1,5 +1,6 @@
 package com.xiongdwm.ai_demo.multi_modal;
 
+import io.micrometer.common.util.StringUtils;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -14,6 +15,7 @@ import com.xiongdwm.ai_demo.utils.GeometryUtils;
 import org.springframework.util.MimeTypeUtils;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
@@ -56,5 +58,48 @@ public class MultiModalService {
                 .doOnNext(fullAnswerBuilder::append).blockLast();
 
         return fullAnswerBuilder.toString();
+    }
+
+    public List<String> extractTextInline(String imageUrl){
+        // Dummy implementation for image captioning
+        List<String>result=new ArrayList<>();
+        FileSystemResource resource = new FileSystemResource(imageUrl);
+        var promptText = "用户提供图片，请按图片中行的顺序逐行提取其中的文字。"
+                + "要求：\n"
+                + "1\\) 只输出图片内的原文文本，每一行对应图片中的一行文字；\n"
+                + "2\\) 不要添加任何额外说明、编号或格式化；\n"
+                + "3\\) 保持文本原样，不要改写或补全缺失内容；\n"
+                + "4\\) 输出的每一行用换行符分隔（UNIX 风格），确保顺序与图片一致。";
+        var userMessage = new UserMessage.Builder()
+                .text(promptText)
+                .media(List.of(new Media(MimeTypeUtils.IMAGE_JPEG, resource)))
+                .build();
+        StringBuilder buffer = new StringBuilder();
+        Flux<ChatResponse> stream = model.stream(new Prompt(userMessage, ChatOptions.builder()
+                .model("qwen2.5vl:7b")
+                .temperature(0.7)
+                .maxTokens(4096)
+                .build()));
+        stream.map(chatResp -> {
+                    String text = chatResp.getResult().getOutput().getText();
+                    return text != null ? text.trim() : "";
+                })
+                .doOnNext(context->{
+                    if(StringUtils.isBlank(context))return;
+                    buffer.append(context);
+                    int index=0;
+                    while((index=buffer.indexOf("\n"))!=-1){
+                        String line=buffer.substring(0,index).replaceAll("\\r","").trim();
+                        if(!line.isEmpty()){
+                            result.add(line);
+                        }
+                        buffer.delete(0,index+1);
+                    }
+                }).blockLast();
+        String last = buffer.toString().trim();
+        if (!last.isEmpty()) {
+            result.add(last);
+        }
+        return result;
     }
 }

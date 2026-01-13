@@ -17,19 +17,19 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ApiResponse<String> handleException(Exception e) {
-        logger.error("Global Exception Handler: ", e);
-        return ApiResponse.error(e.getMessage());
+        logger.error("Global Exception Handler: ", e.getLocalizedMessage());
+        return ApiResponse.error(e.getLocalizedMessage());
     }
 
     @ExceptionHandler(ServiceException.class)
     public ApiResponse<String> handleServiceException(ServiceException e) {
-        logger.error("Service Exception: ", e);
-        return ApiResponse.bussiness_error(e.getMessage());
+        logger.error("Service Exception: ", e.getLocalizedMessage());
+        return ApiResponse.bussiness_error(e.getLocalizedMessage());
     }
 
     @ExceptionHandler(UnAuthorizedException.class)
     public ApiResponse<String> handleUnAuthorizedException(UnAuthorizedException e) {
-        logger.error("Unauthorized Exception: ", e);
+        logger.error("Unauthorized Exception: ", e.getLocalizedMessage());
         return ApiResponse.unauthorized();
     }
     

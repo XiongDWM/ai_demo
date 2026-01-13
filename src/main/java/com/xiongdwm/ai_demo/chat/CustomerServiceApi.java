@@ -3,21 +3,17 @@ package com.xiongdwm.ai_demo.chat;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xiongdwm.ai_demo.ingest.CustomerServiceGraphService;
+import com.xiongdwm.ai_demo.ingest.EmbeddingService;
 import com.xiongdwm.ai_demo.utils.JacksonUtil;
-import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
-import com.xiongdwm.ai_demo.utils.global.ApiResponse;
-import com.xiongdwm.ai_demo.utils.global.GlobalPrompt;
-import com.xiongdwm.ai_demo.utils.global.HierarchicalWordSplitHelper;
-import com.xiongdwm.ai_demo.utils.global.SectionNode;
+import com.xiongdwm.ai_demo.utils.global.*;
 import com.xiongdwm.ai_demo.webapp.entities.FileLog;
 import com.xiongdwm.ai_demo.webapp.entities.KnowledgeBase;
 import com.xiongdwm.ai_demo.webapp.service.FileLogService;
 import io.micrometer.common.util.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
+import jakarta.annotation.Resource;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -30,21 +26,17 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.scheduler.Scheduler;
 import reactor.util.retry.Retry;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
 import java.util.*;
-import java.util.stream.Collectors;
+import java.util.concurrent.Semaphore;
 
 @RestController
 public class CustomerServiceApi {
-    @Autowired
-    private EmbeddingModel embeddingModel;
-    @Autowired
-    private Neo4jVectorStoreFactory vectorStoreFactory;
     @Autowired
     private FileLogService fileLogService;
     @Autowired
@@ -56,7 +48,12 @@ public class CustomerServiceApi {
     @Autowired
     private OllamaChatModel ollamaChatModel;
     @Autowired
-    private Neo4jVectorStoreFactory vectorStore;
+    private EmbeddingService embeddingService;
+
+    @Resource(name = "aiScheduler")
+    private Scheduler scheduler;
+
+    private final Semaphore modelSemaphore = new Semaphore(6);
 
     @Value("${file.upload.path.cs}")
     private String uploadPath;
@@ -86,7 +83,8 @@ public class CustomerServiceApi {
             kb.setDescription("用于客服手册的向量检索");
             kb.setTag(CUSTOMER_SERVICE_TAG);
             fileLogService.saveKnowledgeBase(kb);
-            vectorStore.createVectorIndex(CUSTOMER_SERVICE_TAG,CUSTOMER_SERVICE_TAG,768,"embedding","cosine");
+            var insertCheck = embeddingService.createIndex(CUSTOMER_SERVICE_TAG, CUSTOMER_SERVICE_TAG, 768, "embedding", "cosine");
+            if (!insertCheck) return Mono.just(ApiResponse.error("自动知识库创建失败，请稍后重试"));
             kb = fileLogService.getKnowledgeBaseByTag(CUSTOMER_SERVICE_TAG);
         }
         String filePath = uploadPath + File.separator + filename;
@@ -125,7 +123,7 @@ public class CustomerServiceApi {
             List<SectionNode> nodes = hierarchicalWordSplitHelper.parseHierarchy(path, imageDir, null, 1000);
 
             // 写向量库：以步骤为主粒度，同时补充 Section 级文档
-            VectorStore myVectorStore = vectorStoreFactory.createVectorStore(tag, tag, embeddingModel);
+            VectorStore myVectorStore = embeddingService.vectorStore(tag, tag);
             var sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
             var date = sdf.format(new Date());
             List<Document> documents = new ArrayList<>();
@@ -133,7 +131,8 @@ public class CustomerServiceApi {
                 if (n.getSteps() != null && !n.getSteps().isEmpty()) {
                     for (String stepJson : n.getSteps()) {
                         try {
-                            Map<String, Object> step = MAPPER.readValue(stepJson, new TypeReference<Map<String, Object>>(){});
+                            Map<String, Object> step = MAPPER.readValue(stepJson, new TypeReference<Map<String, Object>>() {
+                            });
                             int idx = (step.get("index") instanceof Number) ? ((Number) step.get("index")).intValue() : 0;
                             String text = Objects.toString(step.get("text"), "");
                             @SuppressWarnings("unchecked")
@@ -149,7 +148,8 @@ public class CustomerServiceApi {
                             md.put("filePath", path);
                             md.put("imageUrls", imgs);
                             documents.add(new Document(content, md));
-                        } catch (Exception ignore) { }
+                        } catch (Exception ignore) {
+                        }
                     }
                 }
                 // 补充 Section 级文档，增强召回
@@ -181,30 +181,10 @@ public class CustomerServiceApi {
         }
     }
 
-    /**
-     * 新增离散问答对到客服知识库（用于FAQ/样例问答）
-     */
-    @PostMapping("/customer-service/qa/add")
-    public ApiResponse<String> addFAQ(@RequestParam("question") String question,
-                                      @RequestParam("answer") String answer) {
-        try {
-            VectorStore vs = vectorStoreFactory.createVectorStore(CUSTOMER_SERVICE_TAG, CUSTOMER_SERVICE_TAG, embeddingModel);
-            var sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            var date = sdf.format(new Date());
-            String text = "问：" + question + "\n答：" + answer;
-            Map<String, Object> md = new HashMap<>();
-            md.put("type", "faq");
-            md.put("date", date);
-            vs.add(List.of(new Document(text, md)));
-            return ApiResponse.success("已写入FAQ问答");
-        } catch (Exception e) {
-            return ApiResponse.error("写入失败：" + e.getMessage());
-        }
-    }
 
     /**
      * 客服问答（流式）：从 customer_service 检索，保留图片 URL，并在回答中提示展示。
-     *
+     * <p>
      * 改进：
      * - 将阻塞检索/图谱操作放到 boundedElastic 线程池执行，避免阻塞 Reactor I/O
      * - 使用 Mono 构建 prompt，然后在 Flux.create 中对 Ollama 的流式响应进行订阅
@@ -229,111 +209,123 @@ public class CustomerServiceApi {
             }, FluxSink.OverflowStrategy.BUFFER);
         }
 
-        Mono<String> promptMono = Mono.fromCallable(() -> {
-            // 检索向量库（可能阻塞）
-            VectorStore vs = vectorStoreFactory.createVectorStore(CUSTOMER_SERVICE_TAG, CUSTOMER_SERVICE_TAG, embeddingModel);
-            List<Document> retrieved = vs.similaritySearch(SearchRequest.builder()
+        Mono<String> promptMono = Mono.fromCallable(() -> buildPrompt(message, topicId))
+                .subscribeOn(scheduler)
+                .timeout(Duration.ofSeconds(10))
+                .retryWhen(Retry.fixedDelay(1, Duration.ofMillis(200)));
+
+        return Flux.usingWhen(
+                Mono.fromCallable(() -> {
+                    if (!modelSemaphore.tryAcquire()) {
+                        throw new IllegalStateException("并发已达上限，请稍后重试");
+                    }
+                    return Boolean.TRUE;
+                }),
+                acquired -> promptMono.flatMapMany(prompt -> Flux.<String>create(sink -> {
+                    StringBuilder fullAnswer = new StringBuilder();
+
+                    Flux<ChatResponse> stream = ollamaChatModel.stream(new Prompt(prompt))
+                            .subscribeOn(scheduler) // 把模型流也放到专用线程池
+                            .timeout(Duration.ofSeconds(60))
+                            .retryWhen(Retry.fixedDelay(1, Duration.ofSeconds(1)));
+
+                    Disposable sub = stream.map(r -> r.getResult().getOutput().getText())
+                            .doOnNext(chunk -> {
+                                if (chunk == null || chunk.isBlank() || sink.isCancelled()) return;
+                                fullAnswer.append(chunk);
+                                System.out.print(chunk);
+                                JacksonUtil.toJsonString(new ConversationContext(chunk, conversationId))
+                                        .filter(s -> !s.isBlank())
+                                        .ifPresent(s -> sink.next(s + "</chunk>"));
+                            })
+                            .doOnComplete(() -> {
+                                String answer = ChatUtils.extractAnswerOnly(fullAnswer.toString());
+                                if (!answer.isEmpty()) chatContextManager.putContextToCache(topicId, message, answer);
+                                sink.complete();
+                            })
+                            .doOnError(err -> {
+                                JacksonUtil.toJsonString(new ConversationContext("【系统】发生错误：" + err.getMessage(), conversationId))
+                                        .filter(s -> !s.isBlank())
+                                        .ifPresent(s -> sink.next(s + "</chunk>"));
+                                sink.complete();
+                            })
+                            .subscribe();
+
+                    sink.onCancel(() -> {
+                        if (!sub.isDisposed()) sub.dispose();
+                    });
+                }, FluxSink.OverflowStrategy.BUFFER)), acquired -> Mono.fromRunnable(modelSemaphore::release)
+        ).onErrorResume(ex -> Flux.<String>create(sink -> {
+            String msg = ex.getMessage() == null ? "系统繁忙，请稍后重试" : ("【系统】" + ex.getMessage());
+            JacksonUtil.toJsonString(new ConversationContext(msg, conversationId))
+                    .filter(s -> !s.isBlank())
+                    .ifPresent(s -> sink.next(s + "</chunk>"));
+            sink.complete();
+        }, FluxSink.OverflowStrategy.BUFFER));
+    }
+
+    private String buildPrompt(String message, String topicId) {
+        VectorStore vs = embeddingService.vectorStore(CUSTOMER_SERVICE_TAG, CUSTOMER_SERVICE_TAG);
+        List<Document> retrieved = vs.similaritySearch(SearchRequest.builder()
+                .query(message)
+                .similarityThreshold(0.9f)
+                .topK(12)
+                .build());
+        var heading = "##相关知识（来自客服手册）：\n";
+        // 准备知识上下文（含图片URL + 图谱路径）
+        var promptKnowledge = embeddingService.graphResult2Prompt(heading, retrieved);
+        System.out.println("=====================检索到的知识=========================");
+        System.out.println(promptKnowledge.length());
+        System.out.println("========================================================");
+
+        StringBuilder faqSection=null;
+        try {
+            String faqTag = CUSTOMER_SERVICE_TAG + "_faq";
+            VectorStore faqVs = embeddingService.vectorStore(faqTag, faqTag);
+            List<Document> faqRetrieved = faqVs.similaritySearch(SearchRequest.builder()
                     .query(message)
-                    .similarityThreshold(0.75f)
-                    .topK(12)
+                    .similarityThreshold(0.70f)
+                    .topK(3)
                     .build());
-
-            // 准备知识上下文（含图片URL + 图谱路径）
-            StringBuilder kbBuilder = new StringBuilder();
-            kbBuilder.append("##相关知识（来自客服手册）：\n");
-
-            // 利用图谱查询每个文档对应的手册路径
-            Set<String> sectionIds = new LinkedHashSet<>();
-            if( null==retrieved||retrieved.isEmpty()) {
-                kbBuilder.append("无相关知识。\n");
-                return kbBuilder.toString();
-            }
-            for (Document d : retrieved) {
-                Object sid = d.getMetadata().get("sectionId");
-                if (sid instanceof String s && !s.isEmpty()) sectionIds.add(s);
-            }
-            List<Map<String, Object>> sectionPaths = customerServiceGraphService.getSectionPaths(new ArrayList<>(sectionIds));
-            Map<String, String> sectionIdToPath = new HashMap<>();
-            for (Map<String, Object> sp : sectionPaths) {
-                String sid = Objects.toString(sp.get("sectionId"), "");
-                String manual = Objects.toString(sp.get("manualFilePath"), "");
-                @SuppressWarnings("unchecked")
-                List<String> titles = (List<String>) sp.getOrDefault("sectionPath", Collections.emptyList());
-                String pathStr = (manual == null ? "" : manual) + (titles.isEmpty() ? "" : (" > " + String.join(" > ", titles)));
-                sectionIdToPath.put(sid, pathStr);
-            }
-
-            for (Document d : retrieved) {
-                String text = d.getText();
-                Object imgsObj = d.getMetadata().get("imageUrls");
-                @SuppressWarnings("unchecked")
-                List<String> imgs = (imgsObj instanceof List) ? (List<String>) imgsObj : Collections.emptyList();
-                String sid = Objects.toString(d.getMetadata().get("sectionId"), "");
-                String pathStr = sectionIdToPath.getOrDefault(sid, "");
-                kbBuilder.append("###位置：").append(pathStr).append("\n");
-                kbBuilder.append("###片段：\n").append(text).append("\n");
-                if (!imgs.isEmpty()) {
-                    kbBuilder.append("###图片：\n");
-                    int k = 1;
-                    for (String url : imgs) {
-                        kbBuilder.append("- 步骤" + k + "图片：<url>").append(url).append("</url>").append("\n");
-                        k++;
+            System.out.println(faqRetrieved);
+            faqSection = new StringBuilder();
+            if (!faqRetrieved.isEmpty()) {
+                faqSection.append("##相关FAQ（常见问答）：\n");
+                Set<String> seen = new LinkedHashSet<>();
+                for (Document d : faqRetrieved) {
+                    String txt = d.getText();
+                    if (txt == null || txt.isBlank()) continue;
+                    if (seen.add(txt.trim())) {
+                        faqSection.append(txt.trim()).append("\n\n");
                     }
                 }
             }
+        } catch (Exception e) {
+            System.out.println(e.getLocalizedMessage());
+        }
+        System.out.println("=====================检索到的FAQ=========================");
+        System.out.println("FAQ 大小："+faqSection.length());
+        if(!faqSection.isEmpty())System.out.println(faqSection.toString());
+        System.out.println("========================================================");
 
-            List<String> context = chatContextManager.getAllContextFromCache(topicId);
-            StringBuilder promptBuilder = new StringBuilder();
-            promptBuilder.append("你是雄博科技研发的企业客服助手。\n");
-            promptBuilder.append("- 严格优先使用提供的手册知识回答。\n");
-            promptBuilder.append("- 当步骤涉及图片，请在相应步骤后附上图片URL。\n");
-            promptBuilder.append("- 严格遵守图片路径格式要求，格式为<url>图片路径</url> 图片格式示例：<url>b0b672a1-c542-41fe-b8fa-e4168247d363_1765963566571.png</url>。\n");
-            promptBuilder.append("- 回答时不允许篡改图片路径。\n");
-            promptBuilder.append("- 若知识不足以回答，再补充常识。\n");
-            if (!context.isEmpty()) {
-                promptBuilder.append("##历史上下文：\n");
-                context.forEach(promptBuilder::append);
-            }
-            promptBuilder.append("##用户问题：\n").append(message).append("\n");
-            promptBuilder.append(kbBuilder);
-            promptBuilder.append("##请用中文，给出清晰分步回答；如有图片URL，请在对应步骤行内给出。\n");
-            promptBuilder.append("##请结合问题背景和检索到的知识进行回答，确保内容准确完整，语气礼貌。\n");
-
-            return promptBuilder.toString();
-        }).subscribeOn(Schedulers.boundedElastic())
-          .timeout(Duration.ofSeconds(10))
-          .retryWhen(Retry.fixedDelay(1, Duration.ofMillis(200)));
-
-        return promptMono.flatMapMany(prompt -> Flux.create(sink -> {
-            StringBuilder fullAnswer = new StringBuilder();
-            Flux<ChatResponse> stream = ollamaChatModel.stream(new Prompt(prompt))
-                    .timeout(Duration.ofSeconds(60))
-                    .retryWhen(Retry.fixedDelay(1, Duration.ofSeconds(1)));
-            Disposable sub = stream.map(r -> r.getResult().getOutput().getText())
-                    .doOnNext(chunk -> {
-                        if (chunk == null || chunk.isBlank() || sink.isCancelled()) return;
-                        System.out.print(chunk);
-                        fullAnswer.append(chunk);
-                        JacksonUtil.toJsonString(new ConversationContext(chunk, conversationId))
-                                .filter(s -> !s.isBlank())
-                                .ifPresent(s -> sink.next(s + "</chunk>"));
-                    })
-                    .doOnComplete(() -> {
-                        String answer = ChatUtils.extractAnswerOnly(fullAnswer.toString());
-                        if (!answer.isEmpty()) chatContextManager.putContextToCache(topicId, message, answer);
-                        sink.complete();
-                    })
-                    .doOnError(err -> {
-                        JacksonUtil.toJsonString(new ConversationContext("【系统】发生错误：" + err.getMessage(), conversationId))
-                                .filter(s -> !s.isBlank())
-                                .ifPresent(s -> sink.next(s + "</chunk>"));
-                        sink.complete();
-                    })
-                    .subscribe();
-
-            sink.onCancel(() -> {
-                if (!sub.isDisposed()) sub.dispose();
-            });
-        }, FluxSink.OverflowStrategy.BUFFER));
+        List<String> context = chatContextManager.getAllContextFromCache(topicId);
+        StringBuilder promptBuilder = new StringBuilder();
+        promptBuilder.append("你是雄博科技研发的企业客服助手。\n");
+        promptBuilder.append("- 严格优先使用提供的手册知识以及常见问答内容回答。\n");
+        promptBuilder.append("- 当步骤自身包含图片时，必须在相应步骤后附上图片URL。\n");
+        promptBuilder.append("- 若步骤本身没有图片，则不得添加无关图片URL。\n");
+        promptBuilder.append("- 严格遵守图片路径格式要求，格式为<url>图片路径</url> 图片格式示例：<url>b0b672a1-c542-41fe-b8fa-e4168247d363_1765963566571.png</url>。\n");
+        promptBuilder.append("- 回答时不允许篡改图片路径。\n");
+        promptBuilder.append("- 若知识不足以回答，再补充常识。\n");
+        if (!context.isEmpty()) {
+            promptBuilder.append("##历史上下文：\n");
+            context.forEach(promptBuilder::append);
+        }
+        promptBuilder.append("##用户问题：\n").append(message).append("\n");
+        promptBuilder.append(promptKnowledge);
+        if(!faqSection.isEmpty())promptBuilder.append(faqSection.toString()).append("\n");
+        promptBuilder.append("##请用中文，给出清晰分步回答；仅使用与问题相关的手册/FAQ内容；如步骤自身包含图片，请在对应步骤行内给出图片URL；否则不得添加图片URL。\n");
+        promptBuilder.append("##请结合问题背景和检索到的知识进行回答，确保内容准确完整，语气礼貌。\n");
+        return promptBuilder.toString();
     }
 }
