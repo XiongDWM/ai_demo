@@ -47,7 +47,7 @@ public class MultiModalService {
                 .build();
         StringBuilder fullAnswerBuilder = new StringBuilder();
         Flux<ChatResponse> stream = model.stream(new Prompt(userMessage, ChatOptions.builder()
-                .model("qwen2.5vl:7b")
+                .model("qwen2.5vl:3b")
                 .temperature(0.1)
                 .maxTokens(4096)
                 .build()));
@@ -76,7 +76,7 @@ public class MultiModalService {
                 .build();
         StringBuilder buffer = new StringBuilder();
         Flux<ChatResponse> stream = model.stream(new Prompt(userMessage, ChatOptions.builder()
-                .model("qwen2.5vl:7b")
+                .model("qwen2.5vl:3b")
                 .temperature(0.7)
                 .maxTokens(4096)
                 .build()));

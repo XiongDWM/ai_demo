@@ -2,6 +2,7 @@ package com.xiongdwm.ai_demo.ingest;
 
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
 import com.xiongdwm.ai_demo.utils.excepotion.ServiceException;
+import com.xiongdwm.ai_demo.utils.global.ExcelParser;
 import jakarta.annotation.Resource;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -10,6 +11,7 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.text.SimpleDateFormat;
 import java.util.*;
 
 @Service
@@ -100,4 +102,23 @@ public class EmbeddingService {
     }
 
 
+
+
+    public List<Document> importFaqFromFile(String filePath, String tag) {
+        var content=ExcelParser.importFile(filePath);
+        var sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        var date = sdf.format(new Date());
+        List<Document>documents=new ArrayList<>(content.size());
+        content.forEach(row-> {
+            String question = row[0];
+            String answer = row[1];
+            String text = "问：" + question + "\n答：" + answer;
+            Map<String, Object> md = new HashMap<>();
+            md.put("type", "faq");
+            md.put("date", date);
+            var doc = new Document(text, md);
+            documents.add(doc);
+        });
+        return documents;
+    }
 }

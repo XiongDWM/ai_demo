@@ -28,6 +28,7 @@ repositories {
 
 ext {
 	set('springAiVersion', "1.1.2")
+    set('dashScopeVersion', "1.1.2.1")
 }
 
 dependencies {
@@ -41,12 +42,17 @@ dependencies {
 	
 	implementation 'org.springframework.boot:spring-boot-starter-data-neo4j'
 	implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.1'
-	implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
 	implementation 'org.apache.poi:poi-ooxml:5.4.0'
 	implementation 'org.bytedeco:javacv-platform:1.5.12'
 	implementation 'com.squareup.okhttp3:okhttp:5.1.0'
+
+    // langchain4j (currently redundant)
 	implementation 'dev.langchain4j:langchain4j-ollama-spring-boot-starter:1.0.0-beta3'
 	implementation 'dev.langchain4j:langchain4j-spring-boot-starter:1.0.0-beta3'
+    // ollama
+    implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
+    // dashscope alibaba
+    implementation "com.alibaba.cloud.ai:spring-ai-alibaba-starter-dashscope:${dashScopeVersion}"
 
 	runtimeOnly 'com.mysql:mysql-connector-j'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
@@ -57,6 +63,7 @@ dependencies {
 dependencyManagement {
 	imports {
 		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+        mavenBom "com.alibaba.cloud.ai:spring-ai-alibaba-bom:1.1.2.0"
 	}
 }
 

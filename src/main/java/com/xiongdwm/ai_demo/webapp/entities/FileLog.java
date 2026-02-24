@@ -29,7 +29,7 @@ public class FileLog {
     @Column
     private Date uploadTime;
     @Column
-    @Enumerated(EnumType.STRING)
+    @Enumerated(EnumType.ORDINAL)
     private ProcessingState processingState = ProcessingState.PENDING;
     @Column
     private String faculty;

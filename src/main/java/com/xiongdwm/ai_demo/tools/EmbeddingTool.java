@@ -20,7 +20,7 @@ public class EmbeddingTool {
     @Autowired
     private Neo4jVectorStoreFactory vectorStoreFactory;
 
-    @Tool(name = "baseKnowledgeRetrieve", description = "根据输入的消息查询相关知识库内容")
+    @Tool(name = "baseKnowledgeRetrieve", description = "根据输入的消息检索相关知识库内容")
     public List<Document> baseKnowledgeRetrieve(@ToolParam(description = "用户输入的问题")String message) {
         VectorStore myVectorStore = vectorStoreFactory.createVectorStore("base_knowledge", "base_knowledge",
                 embeddingModel);

@@ -2,14 +2,11 @@ package com.xiongdwm.ai_demo.embedding;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
-import java.util.Date;
-
 import com.xiongdwm.ai_demo.ingest.EmbeddingService;
+import com.xiongdwm.ai_demo.utils.global.ExcelParser;
 import com.xiongdwm.ai_demo.webapp.entities.FAQ;
 import com.xiongdwm.ai_demo.webapp.service.FAQService;
 import org.apache.commons.lang3.StringUtils;
@@ -64,6 +61,7 @@ public class EmbeddingApi {
         System.out.println(embeddingResponse.getResults().get(0).getOutput());
         System.out.println("Embedding Response: " + embeddingResponse);
 
+
         return embeddingResponse;
     }
 
@@ -94,35 +92,76 @@ public class EmbeddingApi {
     }
 
     @PostMapping("/embedding/byDocPath")
-    public ApiResponse<String> getEmbeddingByDocPath(@RequestParam("path") String path) {
-        FileLog fileLog = fileLogService.getByFilePath(path);
-        if(fileLog == null) return ApiResponse.error("File not found for the given path.");
-        try {
-            KnowledgeBase knowledgeBase = fileLog.getKnowledgeBase();
-            if (knowledgeBase == null) {
-                return ApiResponse.error("Knowledge base not found for the given file path.");
+    public Mono<ApiResponse<String>> getEmbeddingByDocPath(@RequestParam("path") String path) {
+        return Mono.fromCallable(()->{
+            FileLog fileLog = fileLogService.getByFilePath(path);
+            if(fileLog == null) return ApiResponse.error("File not found for the given path.");
+            try {
+                KnowledgeBase knowledgeBase = fileLog.getKnowledgeBase();
+                if (knowledgeBase == null) {
+                    return ApiResponse.error("Knowledge base not found for the given file path.");
+                }
+                var tag= knowledgeBase.getTag();
+                if(StringUtils.isBlank(tag.trim())) {
+                    return ApiResponse.error("Knowledge base tag is empty or whitespace only.");
+                }
+                List<String> list = WordSplitHelper.splitByParagraphs(path);
+                VectorStore myVectorStore = vectorStoreFactory.createVectorStore(tag, tag,
+                        embeddingModel);
+                var sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                var date = sdf.format(new Date());
+                List<Document> documents = list.parallelStream()
+                        .map(text -> new Document(text, Map.of("date",date))).collect(Collectors.toList());
+                System.out.println("documents: "+documents.size());
+                myVectorStore.add(documents);
+                fileLog.setProcessingState(FileLog.ProcessingState.COMPLETED);
+                fileLogService.saveFileLog(fileLog);
+            } catch (Exception e) {
+                fileLog.setProcessingState(FileLog.ProcessingState.FAILED);
+                fileLogService.saveFileLog(fileLog);
+                return ApiResponse.error("Error processing file: " + e.getLocalizedMessage());
             }
-            var tag= knowledgeBase.getTag();
-            if(StringUtils.isBlank(tag.trim())) {
-                return ApiResponse.error("Knowledge base tag is empty or whitespace only.");
-            }
-            List<String> list = WordSplitHelper.splitByParagraphs(path);
-            VectorStore myVectorStore = vectorStoreFactory.createVectorStore(tag, tag,
-                    embeddingModel);
-            var sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            return ApiResponse.success("File processed successfully.");
+        }).subscribeOn(Schedulers.boundedElastic());
+
+
+    }
+
+    @PostMapping("/qa/upload")
+    public Mono<ApiResponse<String>>uploadQaPairs(@RequestParam("tag")String tag){
+        var filePath="C:\\Users\\Admin\\Desktop\\zl\\faq.xlsx";
+        var tagFAQ=tag+"_faq";
+        embeddingService.createIndex(tagFAQ, tagFAQ, 768, "embedding", "cosine");
+        var content= ExcelParser.importFile(filePath);
+
+        return Mono.fromCallable(()->{
+            VectorStore vs = embeddingService.vectorStore(tagFAQ, tagFAQ);
+            var sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
             var date = sdf.format(new Date());
-            List<Document> documents = list.parallelStream()
-                    .map(text -> new Document(text, Map.of("date",date))).collect(Collectors.toList());
-            System.out.println("documents: "+documents.size());
-            myVectorStore.add(documents);
-            fileLog.setProcessingState(FileLog.ProcessingState.COMPLETED);
-            fileLogService.saveFileLog(fileLog);
-        } catch (Exception e) {
-            fileLog.setProcessingState(FileLog.ProcessingState.FAILED);
-            fileLogService.saveFileLog(fileLog);
-            return ApiResponse.error("Error processing file: " + e.getLocalizedMessage());
-        }
-        return ApiResponse.success("File processed successfully.");
+            List<Document>documents=new ArrayList<>(content.size());
+            content.forEach(row->{
+                String question=row[0];
+                String answer=row[1];
+                String text = "问：" + question + "\n答：" + answer;
+                Map<String, Object> md = new HashMap<>();
+                md.put("type", "faq");
+                md.put("date", date);
+                var doc = new Document(text, md);
+                documents.add(doc);
+
+                KnowledgeBase kb = fileLogService.getKnowledgeBaseByTag(tag);
+                FAQ faq=new FAQ();
+                faq.setVectorNodeId(doc.getId());
+                faq.setDate(new Date());
+                faq.setQuestion(question);
+                faq.setAnswer(answer);
+                faq.setKnowledgeBaseId(kb.getId());
+                faqService.add(faq);
+            });
+            vs.add(documents);
+            return ApiResponse.success("已导入FAQ问答");
+        }).subscribeOn(Schedulers.boundedElastic())
+                .onErrorResume(e->Mono.just(ApiResponse.error(e.getLocalizedMessage())));
     }
 
     @PostMapping("/qa/add")
@@ -157,11 +196,11 @@ public class EmbeddingApi {
     public ApiResponse<String>deleteQaPair(@RequestParam("vectorNodeId")String vnId,@RequestParam("tag")String tag){
         var tagFAQ=tag+"_faq";
         try {
+            faqService.deleteByVectorNodeId(vnId);
             VectorStore vs = embeddingService.vectorStore(tagFAQ, tagFAQ);
 
             var idList=List.of(vnId);
             vs.delete(idList);
-            faqService.deleteByVectorNodeId(vnId);
             return ApiResponse.success("已删除FAQ问答");
         } catch (Exception e) {
             return ApiResponse.error("删除失败：" + e.getMessage());
@@ -175,7 +214,7 @@ public class EmbeddingApi {
         if(!subfix.equals("doc")&&!subfix.equals("docx"))return Mono.just(ApiResponse.error("目前只支持doc和docx格式的文件"));
         FileLog fileLog = new FileLog();
         String username = token.split("-")[0];
-        fileLog.setId(0L);
+//        fileLog.setId(0L);
         fileLog.setFileName(filePart.filename());
         fileLog.setFilePath(filePath);
         fileLog.setUploadTime(new Date());
@@ -185,7 +224,7 @@ public class EmbeddingApi {
         File dest = new File(filePath);
         return filePart.transferTo(dest)
                 .then(Mono.fromCallable(() -> {
-                    List<String> list = WordSplitHelper.splitByParagraphs(filePath);
+                    List<String> list = WordSplitHelper.splitByParagraphs(filePath);    
                     list.forEach(chunk->{
                         System.out.println();
                         System.out.println("chunk: "+chunk);
@@ -197,5 +236,6 @@ public class EmbeddingApi {
                     return Mono.just(ApiResponse.error());
                 });
     }
+
 
 }

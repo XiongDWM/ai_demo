@@ -15,11 +15,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.multipart.FilePart;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
@@ -28,6 +24,7 @@ import com.xiongdwm.ai_demo.webapp.entities.FileLog;
 import com.xiongdwm.ai_demo.webapp.entities.KnowledgeBase;
 import com.xiongdwm.ai_demo.webapp.service.FileLogService;
 
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @RestController
@@ -45,6 +42,16 @@ public class FileLogController {
         return fileLogService.showFileLog(knowledgeBaseId);
     }
 
+    @PostMapping("/knowledgeBase/update")
+    public ApiResponse<String> updateKnowledgeBase(KnowledgeBase knowledgeBase) {
+        boolean success = fileLogService.updateKnowledgeBaseInfo(knowledgeBase);
+        if (success) {
+            fileLogService.emitKnowledgeBaseUpdate();
+            return ApiResponse.success("知识库信息更新成功");
+        } else {
+            return ApiResponse.error("知识库信息更新失败");
+        }
+    }
     @PostMapping("/knowledgeBase/save")
     public ApiResponse<String> saveKnowledgeBase(KnowledgeBase knowledgeBase) {
         System.out.println(knowledgeBase.toString());
@@ -61,11 +68,21 @@ public class FileLogController {
         System.out.println(tag);
         vectorStore.createVectorIndex(tag,tag,768,"embedding","cosine");
         fileLogService.saveKnowledgeBase(knowledgeBase);
+        fileLogService.emitKnowledgeBaseUpdate();
         return ApiResponse.success("知识库创建成功");
     }
 
-    @PostMapping("/knowledgeBase/show")
-    public List<KnowledgeBase> showKnowledgeBases(@RequestHeader("Authorization") String token) {
+    @CrossOrigin(originPatterns = "*")
+    @GetMapping(value = "/knowledgeBase/flux/show",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<List<KnowledgeBase>> showKnowledgeBasesStream(
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @RequestParam(value = "token", required = false) String tokenParam
+    ) {
+        return fileLogService.knowledgeBaseFlux();
+    }
+
+    @PostMapping(value = "/knowledgeBase/show",produces = "application/json")
+    public List<KnowledgeBase>showKnowledgeBases(@RequestHeader(value = "Authorization", required = false) String token){
         return fileLogService.showKnowledgeBases();
     }
 

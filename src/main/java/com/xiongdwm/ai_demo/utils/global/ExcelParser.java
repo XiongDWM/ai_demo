@@ -6,12 +6,35 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.StreamSupport;
 
 public class ExcelParser {
+
+    public static List<String[]> importFile(String filePath){
+        List<String[]> columnValues=new ArrayList<>();
+        try (FileInputStream fis = new FileInputStream(filePath);
+             Workbook workbook = new XSSFWorkbook(fis)) {
+            Sheet sheet = workbook.getSheetAt(0);
+            for (Row row : sheet) {
+                var rowValues=new String[row.getLastCellNum()];
+                for (Cell cell : row) {
+                    var value = cell.toString();
+                    rowValues[cell.getColumnIndex()]=value;
+                }
+                columnValues.addLast(rowValues);
+            }
+            return columnValues;
+        } catch (IOException e) {
+            throw new RuntimeException("文件不存在或无法读取: " + filePath, e);
+        } catch (Exception e) {
+            throw new RuntimeException("Excel文件格式错误: " + e.getMessage(), e);
+        }
+    }
+
     public Map<String, String> parseExcelFile(String filePath) {
         String tableNameCN=filePath.substring(filePath.lastIndexOf("/")+1,filePath.lastIndexOf("."));
         try (FileInputStream fis = new FileInputStream(filePath);
@@ -90,6 +113,8 @@ public class ExcelParser {
         }
     }
 
+
+
     public static String inferColumnType(List<String> columnValues) {
         boolean isInt = true, isDouble = true, isDate = true, isBigInt = true;
         SimpleDateFormat[] dateFormats = {
@@ -145,11 +170,7 @@ public class ExcelParser {
     }
 
     public static void main(String[] args) {
-        ExcelParser parser = new ExcelParser();
-        Map<String, String> result = parser.parseExcelFile("/Users/xiong/Files/ss/系统输出报表/铁塔.xlsx");
-        System.out.println(result);
-        var i=Math.max(1,7);
-        System.out.println(i);
+        ExcelParser.importFile("C:\\Users\\Admin\\Desktop\\zl\\faq.xlsx");
     }
 
 }

@@ -1,6 +1,5 @@
 package com.xiongdwm.ai_demo.tools;
 
-import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 
@@ -49,4 +48,21 @@ public class PromptHelper {
 
         return new Prompt(sb.toString(), chatOption);
     }
+
+    public static Prompt buildQAWithVectorStorePromptZh(String userMessage, ChatOptions chatOption) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一个智能问答助手，能够根据提供的参考资料回答用户的问题。\n");
+        sb.append("请遵循以下规则：\n");
+        sb.append("1. 仅使用提供的参考资料回答问题，除非明确说明需要基于常识或通用知识回答。\n");
+        sb.append("2. 如果参考资料中没有相关信息，请礼貌地告知用户你无法回答该问题，而不是编造答案。\n");
+        sb.append("3. 回答应简洁明了，避免冗长的解释。\n");
+        sb.append("4. 如果参考资料中包含多个相关片段，请综合这些信息进行回答。\n");
+        sb.append("\n");
+        sb.append("用户问题：\n").append(userMessage).append("\n");
+        sb.append("\n");
+        sb.append("请根据以上规则生成你的回答。");
+
+        return new Prompt(sb.toString(), chatOption);
+    }
+
 }

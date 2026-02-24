@@ -14,11 +14,7 @@ import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.SessionAttribute;
+import org.springframework.web.bind.annotation.*;
 
 import com.xiongdwm.ai_demo.utils.JacksonUtil;
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
@@ -83,6 +79,8 @@ public class ChatApi {
                 return;
             }
             var isUploaded = (fileName != null && !fileName.isEmpty())||(pictureName != null && !pictureName.isEmpty());
+            var isBaseKnowledge = (knowledge != null && !knowledge.isEmpty());
+            var isDb=(knowledge!=null&&!knowledge.isEmpty()&&knowledge.contains("q->sql")&&knowledge.contains("db_description"));
             var contexts = chatContextManager.getLatestWithIntents(chatId);
             System.out.println("上轮对话：" + contexts);
             sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】意图识别中...", conversationId)).orElse(ConversationContext.getEmptyContextJsonString())
@@ -108,7 +106,7 @@ public class ChatApi {
                 }
                 sink.complete();
             });
-            disposable[0] = intentMsgAsync(message, contexts,isUploaded)
+            disposable[0] = intentMsgAsync(message, contexts,isUploaded,isBaseKnowledge,isDb)
                     .subscribe(intent -> {
                         sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】识别意图：" + intent, conversationId))
                                 .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
@@ -176,6 +174,7 @@ public class ChatApi {
                                         + "</chunk>");
                                 List<Document> fileContent = new ArrayList<>();
                                 if (fileName != null && !fileName.isEmpty()) {
+
                                     sink.next(JacksonUtil
                                             .toJsonString(new ConversationContext("【系统】正在解析文件内容...", conversationId))
                                             .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
@@ -225,6 +224,7 @@ public class ChatApi {
                                         .subscribe();
                                 break;
                             default:
+                                System.out.println("错误意图"+intent);
                                 sink.next(JacksonUtil.toJsonString(new ConversationContext("意图识别失败，请重试", conversationId))
                                         .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                 sink.complete();
@@ -263,7 +263,8 @@ public class ChatApi {
         return sb.toString();
     }
 
-    private Flux<String> dbAgentLLMAnswer(List<Document> results, String sqlResult, String message, String chatId) {
+    @GetMapping("/chat/dbAgentAnswer")
+    public Flux<String> dbAgentLLMAnswer(List<Document> results, String sqlResult, String message, String chatId) {
         System.out.println("dbAgentLLMAnswerId: " + chatId);
         StringBuilder answerPrompt = new StringBuilder();
         answerPrompt.append("你是数据库问答助手。请结合下方数据库字段描述和SQL查询结果，用简洁自然的语言回答用户问题。\n")
@@ -346,94 +347,97 @@ public class ChatApi {
                     System.out.println();
                     System.out.println("回答取消");
                 });
-        // return ollamaChatModel.stream(new
-        // Prompt(promptBuilder.toString())).map(resp->resp.getResult().getOutput().getText());
     }
 
     private Flux<String> streamingChatWithBaseKnowledge(String message, String chatId, List<Document> fileContent,
             String knowledge) {
         List<String> context = chatContextManager.getAllContextFromCache(chatId);
-        System.out.println("knowledge: " + knowledge);
-        final List<Document> documents = new ArrayList<>();
-        if (StringUtils.isBlank(knowledge)&&fileContent.isEmpty()) {
-            knowledge = "base_knowledge";
-            var vectorStore = vectorStoreFactory.createVectorStore("base_knowledge", "base_knowledge", embeddingModel);
-            documents.addAll(Objects.requireNonNull(vectorStore.similaritySearch(SearchRequest.builder()
-                    .query(message)
-                    .similarityThreshold(0.8f)
-                    .topK(10)
-                    .build())));
-        }  else  {
-            for (String split : knowledge.split(",")) {
-                var vectorStore = vectorStoreFactory.createVectorStore(split, split, embeddingModel);
-                List<Document> searchResults = vectorStore.similaritySearch(SearchRequest.builder()
-                        .query(message)
-                        .similarityThreshold(0.8f)
-                        .topK(15)
-                        .build());
-                if(null==searchResults || searchResults.isEmpty())continue;
-                System.out.println("searchResults size: " + searchResults.size());
-                documents.addAll(searchResults);
-                List<Document> sortedDocuments = documents.stream().sorted((d1, d2) -> Double.compare(d2.getScore(), d1.getScore())).toList();
-                List<Document> topDocuments = sortedDocuments.size() > 10 ? sortedDocuments.subList(0, 10) : sortedDocuments;
-                documents.clear();
-                documents.addAll(topDocuments);
-                System.out.println("knowledge size: " + documents.size());
-            }
-        }
 
-        if (!fileContent.isEmpty()) {
-            documents.addAll(fileContent);
-        }
+        return Mono.fromCallable(() -> {
+                    final List<Document> documents = new ArrayList<>();
+                    String knowledgeChosen=knowledge;
+                    if (StringUtils.isBlank(knowledgeChosen) && fileContent.isEmpty()) {
+                        knowledgeChosen = "base_knowledge";
+                        var vectorStore = vectorStoreFactory.createVectorStore("base_knowledge", "base_knowledge", embeddingModel);
+                        documents.addAll(Objects.requireNonNull(vectorStore.similaritySearch(SearchRequest.builder()
+                                .query(message)
+                                .similarityThreshold(0.8f)
+                                .topK(10)
+                                .build())));
+                    } else {
+                        for (String split : knowledge.split(",")) {
+                            var vectorStore = vectorStoreFactory.createVectorStore(split, split, embeddingModel);
+                            List<Document> searchResults = vectorStore.similaritySearch(SearchRequest.builder()
+                                    .query(message)
+                                    .similarityThreshold(0.8f)
+                                    .topK(10)
+                                    .build());
 
-        var promptBuilder = new StringBuilder();
-        promptBuilder.append(GlobalPrompt.IDENTITY_STRING);
-        if (context.isEmpty()) {
-            promptBuilder.append("##用户当前的问题是：\n").append(message).append("\n");
-        } else {
-            promptBuilder.append("##用户当前的问题是：\n").append(message).append("\n");
-            promptBuilder.append("##你需要结合上下文作出合理、自然的回答\n");
-            promptBuilder.append("##上下文如下：\n");
-            context.forEach(promptBuilder::append);
-            promptBuilder.append("##如果上下文内容与这次问题无关，忽略上下文\n");
-        }
-        if (!knowledge.isEmpty()) {
-            promptBuilder.append("##你需要结合知识库作出合理、自然的回答\n");
-            promptBuilder.append("##如果知识库内容无法完全回答，可以补充常识。\n");
-            promptBuilder.append("##知识库内容如下：\n");
-            for (Document doc : documents) {
-                promptBuilder.append("##").append(doc.getText()).append("\n");
-            }
-
-        }
-        Prompt prompt = new Prompt(promptBuilder.toString());
-        Flux<ChatResponse> stream = ollamaChatModel.stream(prompt);
-
-        // 回答并缓存问答
-        StringBuilder fullAnswerBuilder = new StringBuilder();
-        return stream.map(chatResp -> chatResp.getResult().getOutput().getText())
-                .doOnNext(fullAnswerBuilder::append)
-                .doOnComplete(() -> {
-                    // 在流完成后存储完整的问答
-                    String fullAnswer = ChatUtils.extractAnswerOnly(fullAnswerBuilder.toString());
-                    if (!fullAnswer.isEmpty()) {
-                        chatContextManager.putContextToCache(chatId, message, fullAnswer);
+                            // 多个知识库知识重新排序
+                            if (searchResults != null && !searchResults.isEmpty()) {
+                                documents.addAll(searchResults);
+                                List<Document> sortedDocuments = documents.stream().sorted((d1, d2) -> Double.compare(d2.getScore(), d1.getScore())).toList();
+                                List<Document> topDocuments = sortedDocuments.size() > 10 ? sortedDocuments.subList(0, 10) : sortedDocuments;
+                                documents.clear();
+                                documents.addAll(topDocuments);
+                            }
+                        }
                     }
-                }).doOnCancel(() -> {
-                    System.out.println("回答取消");
+                    if (!fileContent.isEmpty()) {
+                        documents.addAll(fileContent);
+                    }
+                    return documents;
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMapMany(documents -> {
+                    var promptBuilder = new StringBuilder();
+                    promptBuilder.append(GlobalPrompt.IDENTITY_STRING);
+                    if (context.isEmpty()) {
+                        promptBuilder.append("##用户当前的问题是：\n").append(message).append("\n");
+                    } else {
+                        promptBuilder.append("##用户当前的问题是：\n").append(message).append("\n");
+                        promptBuilder.append("##你需要结合上下文作出合理、自然的回答\n");
+                        promptBuilder.append("##上下文如下：\n");
+                        context.forEach(promptBuilder::append);
+                        promptBuilder.append("##如果上下文内容与这次问题无关，忽略上下文\n");
+                    }
+                    if (!knowledge.isEmpty()) {
+                        promptBuilder.append("##你需要结合知识库作出合理、自然的回答\n");
+                        promptBuilder.append("##如果知识库内容无法完全回答，可以补充常识。\n");
+                        promptBuilder.append("##知识库内容如下：\n");
+                        for (Document doc : documents) {
+                            promptBuilder.append("##").append(doc.getText()).append("\n");
+                        }
+                    }
+                    Prompt prompt = new Prompt(promptBuilder.toString());
+                    Flux<ChatResponse> stream = ollamaChatModel.stream(prompt);
+
+                    StringBuilder fullAnswerBuilder = new StringBuilder();
+                    return stream.map(chatResp -> chatResp.getResult().getOutput().getText())
+                            .doOnNext(fullAnswerBuilder::append)
+                            .doOnComplete(() -> {
+                                String fullAnswer = ChatUtils.extractAnswerOnly(fullAnswerBuilder.toString());
+                                if (!fullAnswer.isEmpty()) {
+                                    chatContextManager.putContextToCache(chatId, message, fullAnswer);
+                                }
+                            }).doOnCancel(() -> {
+                                System.out.println("回答取消");
+                            });
                 });
     }
 
-    private Mono<String> intentMsgAsync(String message, List<String> contexts,boolean isUploaded) {
-        if(isUploaded)return Mono.just("2");
+    private Mono<String> intentMsgAsync(String message, List<String> contexts,boolean isUploaded,boolean isBaseKnowledge,boolean isDb) {
+        if(isDb)return Mono.just("1");
+        if(isUploaded||isBaseKnowledge)return Mono.just("2");
         StringBuilder prompt = new StringBuilder();
         prompt.append("##你是一个智能意图识别助手。请根据用户的历史对话上下文和当前问题，判断其意图属于以下哪一类，只返回编号，不要解释：\n")
                 .append(IntentsEnum.print())
                 .append("##不允许添加其他意图，并且只返回提供意图类别对应的编号1、2或3 \n")
-                .append("##如果用户问题无法归类到以上意图，请返回0\n");
+                .append("##如果用户问题无法归类到以上意图，请返回数字0\n")
+                .append("##回答只能是0、1、2或3\n")
+                .append("##必须返回0、1、2或3其中一个数字，不能返回空白字符串\n");
         if (contexts != null && !contexts.isEmpty()) {
             prompt.append("##历史上下文如下：\n");
-            // prompt.append(context).append("\n");
             contexts.forEach(c -> prompt.append(c).append("\n"));
         }
         prompt.append("##当前问题：").append(message).append("\n");

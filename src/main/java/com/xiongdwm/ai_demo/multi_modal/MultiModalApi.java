@@ -79,15 +79,10 @@ public class MultiModalApi {
         FileSystemResource resource = new FileSystemResource(name);
         var promptText = """
             ##你是OCR助手，只能逐字提取图片中的中文和英文字符，绝不能翻译、解释或补充。
-            ##You are an OCR assistant. Only extract Chinese and English characters from the image, do NOT translate, interpret, or add anything.
             ##图片中的文字是什么就输出什么，保持原顺序，不要分类，不要解释，不要翻译，不要省略，不要想象。
-            ##What you see is what you output. Keep the original order. No classification, no explanation, no translation, no imagination.
             ##如果无法识别，回复“无法识别”。
-            ##If the text cannot be recognized, reply with '无法识别'.
             ##只输出提取到的文字，不要输出任何其他内容。
-            ##Only output the extracted text, nothing else.
             ##输出时请忽略所有换行，所有文字合并为一个连续字符串。
-            ##Ignore all line breaks in the output, merge all text into a single continuous string.
         """;
         var userMessage = new UserMessage.Builder()
                 .text(promptText)
@@ -99,9 +94,7 @@ public class MultiModalApi {
                 .maxTokens(4096)
                 .build()));
         return stream.map(chatResp -> chatResp.getResult().getOutput().getText())
-                .doOnNext(chunk -> {
-                    fullAnswerBuilder.append(chunk);
-                })
+                .doOnNext(fullAnswerBuilder::append)
                 .doOnComplete(() -> {
                     String fullAnswer = fullAnswerBuilder.toString();
                     if (!fullAnswer.isEmpty()) {
@@ -172,9 +165,7 @@ public class MultiModalApi {
                     String text = chatResp.getResult().getOutput().getText();
                     return text != null ? text.trim() : "";
                 })
-                .doOnNext(chunk -> {
-                    fullAnswerBuilder.append(chunk);
-                })
+                .doOnNext(fullAnswerBuilder::append)
                 .doOnComplete(() -> {
                     String fullAnswer = fullAnswerBuilder.toString();
                     if (!fullAnswer.isEmpty()) {

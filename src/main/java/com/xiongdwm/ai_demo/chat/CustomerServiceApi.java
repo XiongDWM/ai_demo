@@ -91,7 +91,7 @@ public class CustomerServiceApi {
         File dest = new File(filePath);
 
         FileLog fileLog = new FileLog();
-        fileLog.setId(0L);
+//        fileLog.setId(0L);
         fileLog.setFileName(filename);
         fileLog.setFilePath(filePath);
         fileLog.setUploadTime(new Date());
@@ -304,9 +304,6 @@ public class CustomerServiceApi {
             System.out.println(e.getLocalizedMessage());
         }
         System.out.println("=====================检索到的FAQ=========================");
-        System.out.println("FAQ 大小："+faqSection.length());
-        if(!faqSection.isEmpty())System.out.println(faqSection.toString());
-        System.out.println("========================================================");
 
         List<String> context = chatContextManager.getAllContextFromCache(topicId);
         StringBuilder promptBuilder = new StringBuilder();
@@ -323,7 +320,7 @@ public class CustomerServiceApi {
         }
         promptBuilder.append("##用户问题：\n").append(message).append("\n");
         promptBuilder.append(promptKnowledge);
-        if(!faqSection.isEmpty())promptBuilder.append(faqSection.toString()).append("\n");
+        if(faqSection!=null&&!faqSection.isEmpty())promptBuilder.append(faqSection.toString()).append("\n");
         promptBuilder.append("##请用中文，给出清晰分步回答；仅使用与问题相关的手册/FAQ内容；如步骤自身包含图片，请在对应步骤行内给出图片URL；否则不得添加图片URL。\n");
         promptBuilder.append("##请结合问题背景和检索到的知识进行回答，确保内容准确完整，语气礼貌。\n");
         return promptBuilder.toString();

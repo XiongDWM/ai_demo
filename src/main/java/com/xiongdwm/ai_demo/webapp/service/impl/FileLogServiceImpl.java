@@ -15,6 +15,10 @@ import com.xiongdwm.ai_demo.webapp.repository.KnowledgeBaseRepository;
 import com.xiongdwm.ai_demo.webapp.service.FileLogService;
 
 import jakarta.annotation.Resource;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 
 @Service
 public class FileLogServiceImpl implements FileLogService{
@@ -25,6 +29,8 @@ public class FileLogServiceImpl implements FileLogService{
     private KnowledgeBaseRepository knowledgeBaseRepository;
     @Resource
     private AiSysUserRepository aiSysUserRepository;
+
+    private final Sinks.Many<List<KnowledgeBase>> sink = Sinks.many().replay().latest();
 
     @Override
     public List<FileLog> showFileLog(Long knowledgeBaseId) {
@@ -39,7 +45,7 @@ public class FileLogServiceImpl implements FileLogService{
 
     @Override
     public void saveFileLog(FileLog fileLog) {
-        fileLogRepo.save(fileLog);
+        fileLogRepo.saveAndFlush(fileLog);
     }
 
     @Override
@@ -60,6 +66,19 @@ public class FileLogServiceImpl implements FileLogService{
     }
 
     @Override
+    public Flux<List<KnowledgeBase>> knowledgeBaseFlux() {
+        sink.tryEmitNext(showKnowledgeBases());
+        return sink.asFlux();
+    }
+
+    @Override
+    public void emitKnowledgeBaseUpdate() {
+        Mono.fromCallable(this::showKnowledgeBases)
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(sink::tryEmitNext);
+    }
+
+    @Override
     public FileLog getByFilePath(String path) {
         // TODO Auto-generated method stub
         return fileLogRepo.findOneByFilePath(path).orElse(null);
@@ -70,8 +89,11 @@ public class FileLogServiceImpl implements FileLogService{
         return knowledgeBaseRepository.findOneByTag(tag).orElse(null);
     }
 
+    @Override
+    public boolean updateKnowledgeBaseInfo(KnowledgeBase knowledgeBase) {
+        knowledgeBaseRepository.saveAndFlush(knowledgeBase);
+        return true;
+    }
 
-
-    
 
 }
