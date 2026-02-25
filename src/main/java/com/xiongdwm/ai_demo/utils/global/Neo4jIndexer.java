@@ -10,6 +10,7 @@ import org.neo4j.driver.Session;
 import org.neo4j.driver.Transaction;
 import org.neo4j.driver.TransactionWork;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingResponse;
@@ -21,6 +22,7 @@ public class Neo4jIndexer {
     private Driver driver;
 
     @Autowired
+    @Qualifier("ollamaEmbedding")
     private EmbeddingModel embeddingModel;
 
     /**

@@ -8,11 +8,11 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
-import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaApi;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,7 +42,8 @@ public class AgentApi {
         private DataBaseTool dataBaseTool;
 
         @Autowired
-        private OllamaChatModel ollamaChatModel;
+        @Qualifier("dashscopeChat")
+        private ChatModel dashscopeChatModel;
         
 
         private final WebClient webClient = WebClient.create("http://192.168.0.77:18081");
@@ -88,7 +89,7 @@ public class AgentApi {
                 sb.append("##请直接返回工具调用的结果，不要添加其他内容 \n");
                 sb.append("##你需要按照规定格式返回结果，如下：\n");
                 sb.append("##问题如下: \n").append(message).append("\n");
-                ChatModel chatModel = OllamaChatModel.builder().ollamaApi(OllamaApi.builder().build()).build();
+                ChatModel chatModel = dashscopeChatModel;
                 String conversationId = chatId + "-" + System.currentTimeMillis();
 
                 ChatOptions chatOption = ToolCallingChatOptions.builder()
@@ -113,7 +114,7 @@ public class AgentApi {
                 sb.append("##请注意数字，不要篡改数字\n");
                 Prompt promptOverAllPrompt = new Prompt(sb.toString());
                 
-                return ollamaChatModel.stream(promptOverAllPrompt)
+                return dashscopeChatModel.stream(promptOverAllPrompt)
                                 .map(chatResp -> chatResp.getResult().getOutput().getText())
                                 .map(chunk -> {
                                     ConversationContext ctx = new ConversationContext(chunk, conversationId);
@@ -138,7 +139,7 @@ public class AgentApi {
                 sb.append("##如果无法调用工具，请直接用问题作为回答:"+message+" \n");
                 // sb.append("##注意禁止重复调用同一个工具：如果工具已经返回了明确的结果，请直接用该结果继续推理或回答，不要再次调用该工具。");
                 sb.append("##问题如下: \n").append(message).append("\n");
-                ChatModel chatModel = OllamaChatModel.builder().ollamaApi(OllamaApi.builder().build()).build();
+                ChatModel chatModel = dashscopeChatModel;
                 String conversationId = chatId + "-" + System.currentTimeMillis();
                 ChatOptions chatOption = ToolCallingChatOptions.builder()
                                 .model("qwen3:4b")
@@ -163,7 +164,7 @@ public class AgentApi {
         @PostMapping("/agent/chat/workflow")
         public Flux<String> chatOllama(@RequestParam(name = "message") String message) {
                 ToolCallback[] toolCallbacks = ToolCallbacks.from(fiberTool, embeddingTool, dataBaseTool);
-                ChatClient chatClient = ChatClient.create(ollamaChatModel);
+                ChatClient chatClient = ChatClient.create(dashscopeChatModel);
 
                 return Flux.just("");
         }

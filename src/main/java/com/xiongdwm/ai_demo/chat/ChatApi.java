@@ -5,15 +5,16 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 
 import com.xiongdwm.ai_demo.utils.JacksonUtil;
@@ -37,10 +38,12 @@ import reactor.core.scheduler.Schedulers;
 @RestController
 public class ChatApi {
     @Autowired
-    private OllamaChatModel ollamaChatModel;
+    @Qualifier("dashscopeChat")
+    private ChatModel dashscopeChatModel;
     @Autowired
     private ChatContextManager chatContextManager;
     @Autowired
+    @Qualifier("ollamaEmbedding")
     private EmbeddingModel embeddingModel;
     @Autowired
     private Neo4jVectorStoreFactory vectorStoreFactory;
@@ -278,7 +281,7 @@ public class ChatApi {
                 .append("###注意不要用数据主键作为数据的代表,需要用具体名称来代表数据条目\n")
                 .append("###请用中文回答：");
         StringBuilder resultBuilder = new StringBuilder();
-        return ollamaChatModel.stream(new Prompt(answerPrompt.toString()))
+        return dashscopeChatModel.stream(new Prompt(answerPrompt.toString()))
                 .map(chatResp -> chatResp.getResult().getOutput().getText())
                 .doOnNext(resultBuilder::append).doOnComplete(() -> {
                     String result = resultBuilder.toString();
@@ -328,7 +331,7 @@ public class ChatApi {
             promptBuilder.append("##上下文如下：\n");
             context.forEach(promptBuilder::append);
         }
-        Flux<ChatResponse> stream = ollamaChatModel.stream(new Prompt(promptBuilder.toString()));
+        Flux<ChatResponse> stream = dashscopeChatModel.stream(new Prompt(promptBuilder.toString()));
 
         // 回答并缓存问答
         StringBuilder fullAnswerBuilder = new StringBuilder();
@@ -410,7 +413,7 @@ public class ChatApi {
                         }
                     }
                     Prompt prompt = new Prompt(promptBuilder.toString());
-                    Flux<ChatResponse> stream = ollamaChatModel.stream(prompt);
+                    Flux<ChatResponse> stream = dashscopeChatModel.stream(prompt);
 
                     StringBuilder fullAnswerBuilder = new StringBuilder();
                     return stream.map(chatResp -> chatResp.getResult().getOutput().getText())
@@ -444,7 +447,7 @@ public class ChatApi {
         Prompt promptWithModelChose = new Prompt(prompt.toString(), ChatOptions.builder()
                 .model("qwen3:0.6b")
                 .build());
-        return Mono.fromCallable(() -> ollamaChatModel.call(promptWithModelChose).getResult().getOutput().getText())
+        return Mono.fromCallable(() -> dashscopeChatModel.call(promptWithModelChose).getResult().getOutput().getText())
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnCancel(() -> {
                     System.out.println("取消意图识别");
@@ -479,7 +482,7 @@ public class ChatApi {
         Prompt promptWithModelChose = new Prompt(prompt.toString(), ChatOptions.builder()
                 .model("qwen3:1.7b")
                 .build());
-        return ollamaChatModel.stream(promptWithModelChose)
+        return dashscopeChatModel.stream(promptWithModelChose)
                 .map(chatResp -> chatResp.getResult().getOutput().getText())
                 .reduce(new StringBuilder(), StringBuilder::append)
                 .map(StringBuilder::toString)

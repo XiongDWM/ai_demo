@@ -9,6 +9,7 @@ import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.text.SimpleDateFormat;
@@ -18,6 +19,7 @@ import java.util.*;
 public class EmbeddingService {
 
     @Autowired
+    @Qualifier("ollamaEmbedding")
     private EmbeddingModel embeddingModel;
     @Autowired
     private Neo4jVectorStoreFactory vectorStoreFactory;

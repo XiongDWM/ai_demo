@@ -11,13 +11,14 @@ import com.xiongdwm.ai_demo.webapp.entities.KnowledgeBase;
 import com.xiongdwm.ai_demo.webapp.service.FileLogService;
 import io.micrometer.common.util.StringUtils;
 import jakarta.annotation.Resource;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.multipart.FilePart;
@@ -46,7 +47,8 @@ public class CustomerServiceApi {
     @Autowired
     private ChatContextManager chatContextManager;
     @Autowired
-    private OllamaChatModel ollamaChatModel;
+    @Qualifier("dashscopeChat")
+    private ChatModel dashscopeChatModel;
     @Autowired
     private EmbeddingService embeddingService;
 
@@ -224,7 +226,7 @@ public class CustomerServiceApi {
                 acquired -> promptMono.flatMapMany(prompt -> Flux.<String>create(sink -> {
                     StringBuilder fullAnswer = new StringBuilder();
 
-                    Flux<ChatResponse> stream = ollamaChatModel.stream(new Prompt(prompt))
+                    Flux<ChatResponse> stream = dashscopeChatModel.stream(new Prompt(prompt))
                             .subscribeOn(scheduler) // 把模型流也放到专用线程池
                             .timeout(Duration.ofSeconds(60))
                             .retryWhen(Retry.fixedDelay(1, Duration.ofSeconds(1)));

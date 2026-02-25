@@ -11,6 +11,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
@@ -21,6 +22,7 @@ import jakarta.persistence.PersistenceContext;
 @Component
 public class DataBaseTool {
     @Autowired
+    @Qualifier("ollamaEmbedding")
     private EmbeddingModel embeddingModel;
     @Autowired
     private Neo4jVectorStoreFactory vectorStoreFactory;

@@ -8,6 +8,7 @@ import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
@@ -25,6 +26,7 @@ public class AiVectorizeProcessor implements BeanPostProcessor {
     @Autowired
     private Neo4jVectorStoreFactory vectorStoreFactory;
     @Autowired
+    @Qualifier("ollamaEmbedding")
     private EmbeddingModel embeddingModel;
 
     private static final Map<Class<?>, String> JAVA_TO_DB_TYPE = Map.of(
