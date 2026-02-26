@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
+import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -394,30 +396,39 @@ public class ChatApi {
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMapMany(documents -> {
                     var promptBuilder = new StringBuilder();
-                    promptBuilder.append(GlobalPrompt.IDENTITY_STRING);
+//                    promptBuilder.append(GlobalPrompt.IDENTITY_STRING);
+                    promptBuilder.append("##你是一个智能RAG助手，用户会问你问题，你需要根据上下文、知识库内容和问题作出合理、自然的回答\n");
                     if (context.isEmpty()) {
                         promptBuilder.append("##用户当前的问题是：\n").append(message).append("\n");
                     } else {
                         promptBuilder.append("##用户当前的问题是：\n").append(message).append("\n");
-                        promptBuilder.append("##你需要结合上下文作出合理、自然的回答\n");
+//                        promptBuilder.append("##你需要结合上下文作出合理、自然的回答\n");
                         promptBuilder.append("##上下文如下：\n");
                         context.forEach(promptBuilder::append);
                         promptBuilder.append("##如果上下文内容与这次问题无关，忽略上下文\n");
                     }
                     if (!knowledge.isEmpty()) {
-                        promptBuilder.append("##你需要结合知识库作出合理、自然的回答\n");
+//                        promptBuilder.append("##你需要结合知识库作出合理、自然的回答\n");
                         promptBuilder.append("##如果知识库内容无法完全回答，可以补充常识。\n");
                         promptBuilder.append("##知识库内容如下：\n");
                         for (Document doc : documents) {
                             promptBuilder.append("##").append(doc.getText()).append("\n");
                         }
                     }
-                    Prompt prompt = new Prompt(promptBuilder.toString());
+                    DashScopeChatOptions options=DashScopeChatOptions.builder()
+                            .enableThinking(true)
+                            .model("qwen-plus")
+                            .build();
+                    Prompt prompt = new Prompt(promptBuilder.toString(),options);
+
                     Flux<ChatResponse> stream = dashscopeChatModel.stream(prompt);
 
                     StringBuilder fullAnswerBuilder = new StringBuilder();
                     return stream.map(chatResp -> chatResp.getResult().getOutput().getText())
-                            .doOnNext(fullAnswerBuilder::append)
+                            .doOnNext(chunk->{
+                                fullAnswerBuilder.append(chunk);
+                                System.out.print(chunk);
+                            })
                             .doOnComplete(() -> {
                                 String fullAnswer = ChatUtils.extractAnswerOnly(fullAnswerBuilder.toString());
                                 if (!fullAnswer.isEmpty()) {
@@ -444,9 +455,7 @@ public class ChatApi {
             contexts.forEach(c -> prompt.append(c).append("\n"));
         }
         prompt.append("##当前问题：").append(message).append("\n");
-        Prompt promptWithModelChose = new Prompt(prompt.toString(), ChatOptions.builder()
-                .model("qwen3:0.6b")
-                .build());
+        Prompt promptWithModelChose = new Prompt(prompt.toString());
         return Mono.fromCallable(() -> dashscopeChatModel.call(promptWithModelChose).getResult().getOutput().getText())
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnCancel(() -> {

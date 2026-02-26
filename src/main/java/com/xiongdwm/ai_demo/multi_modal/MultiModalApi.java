@@ -34,6 +34,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @RestController
 public class MultiModalApi {
@@ -68,24 +69,6 @@ public class MultiModalApi {
                 .build();
         return model.call(new Prompt(userMessage, ChatOptions.builder().model(OllamaModel.LLAVA.getName()).build()))
                 .getResult().getOutput().getText();
-    }
-    @GetMapping("/streaming/deviceScaleReader")
-    public Flux<String> streamingDeviceScaleReader(@RequestPart("file") FilePart filePart) {
-        var promptText = "##用户提供设备刻度尺图片坐标，你需要计算刻度尺的倾斜角度。\n"
-                + "##坐标格式为：top:x1,y1;bottom:x2,y2\n"
-                + "##请根据提供的坐标计算刻度尺的倾斜角度，单位为度。\n"
-                + "##请只返回一个数字，代表倾斜角度，保留两位小数，不要添加任何其他文字或解释。\n";
-
-        var userMessage = new UserMessage.Builder()
-                .text(promptText + "\n坐标：" + filePart)
-                .build();
-        StringBuilder fullAnswerBuilder = new StringBuilder();
-        Flux<ChatResponse> stream = model.stream(new Prompt(userMessage, ChatOptions.builder().model("qwen2.5vl:3b")
-                .temperature(0.1)
-                .maxTokens(10)
-                .build()));
-        return stream.map(chatResp -> chatResp.getResult().getOutput().getText())
-                .doOnNext(fullAnswerBuilder::append);
     }
 
     @GetMapping("/streaming/picture/ocr")
@@ -194,4 +177,10 @@ public class MultiModalApi {
                 });
         
     }
+
+    @GetMapping(value="/streaming/multi/deviceScaleReader") //
+    public Mono<String> multimodalDeviceScaleReader(@RequestParam("file") String fileName){
+        return multiModalService.multimodalDeviceScaleReader(fileName);
+    }
+
 }

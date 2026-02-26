@@ -1,6 +1,9 @@
 package com.xiongdwm.ai_demo.multi_modal;
 
+import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import io.micrometer.common.util.StringUtils;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -10,11 +13,15 @@ import org.springframework.ai.content.Media;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Component;
 
 import com.xiongdwm.ai_demo.utils.GeometryUtils;
 import org.springframework.util.MimeTypeUtils;
+import org.springframework.web.bind.annotation.RequestPart;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +31,9 @@ public class MultiModalService {
     @Autowired
     @Qualifier("ollamaChat")
     private ChatModel model;
+    @Qualifier("dashscopeChat")
+    @Autowired
+    private ChatModel dashscope;
 
     public double calAngle(String coordsString){
         var parts = coordsString.split(";");
@@ -103,5 +113,48 @@ public class MultiModalService {
             result.add(last);
         }
         return result;
+    }
+
+    public Mono<String> multimodalDeviceScaleReader(String fileName){
+        var subfix=fileName.substring(fileName.lastIndexOf(".")+1);
+        if(subfix.equals("doc")||subfix.equals("docx")){
+            // 调用解析
+            return Mono.just("还在做!!");
+        }
+        System.out.println(subfix);
+        String promptBuilder = """
+                你是一个多模态解析助手，用户提供图片，ppt或者pdf文件，请你根据文件内容提取设备规格以及设备参数的信息。
+                请按照以下格式提取信息：
+                    @@@设备名称：XXX
+                    @@@设备规格：XXX
+                    @@@设备参数：XXX
+                请勿篡改规格参数信息
+                请确保提取的信息准确且完整，如果文件中没有相关信息，请返回'无相关信息'。""";
+            var options= DashScopeChatOptions.builder()
+                .enableThinking(true)
+                .model("qwen3.5-plus")
+                .multiModel(true)
+                .build();
+            var resource=new FileSystemResource(fileName);
+            var userMessageBuilder = new UserMessage.Builder()
+                    .text(promptBuilder);
+            switch (subfix){
+                case "jpg","jpeg","png"-> userMessageBuilder.media(List.of(new Media(MimeTypeUtils.IMAGE_JPEG, resource)));
+                default -> userMessageBuilder.media(List.of(new Media(MimeTypeUtils.ALL,resource)));
+            }
+            var userMessage=userMessageBuilder.build();
+
+        ChatClient client=ChatClient.builder(dashscope).build();
+        return client.prompt(new Prompt(userMessage, options))
+                .stream()
+                .chatResponse()
+                .map(cr -> {
+                    String text = cr.getResult().getOutput().getText();
+                    return text == null ? "" : text.trim();
+                })
+                .filter(StringUtils::isNotBlank)
+                .reduce(new StringBuilder(), StringBuilder::append)
+                .map(sb -> sb.toString().trim().replace("@@@", "\n--"));
+
     }
 }
