@@ -6,7 +6,7 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
-import org.springframework.ai.chat.client.advisor.api.Advisor;
+import com.xiongdwm.ai_demo.multi_modal.MultiModalService;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -53,6 +53,8 @@ public class ChatApi {
     private EntityManager entityManager;
     @Autowired
     private ImageCaptionClient imageCaptionClient;
+    @Autowired
+    private MultiModalService multiModalService;
     @Autowired
     private Neo4jIndexer neo4jIndexer;
     @Autowired
@@ -185,18 +187,16 @@ public class ChatApi {
                                             .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                     try {
                                         // 使用分层拆分器实例方法，保持标题-子项结构并提取图片
-                                        var sections = hierarchicalWordSplitHelper.parseHierarchy(fileName,
-                                                "upload/images", imageCaptionClient, 1200);
+                                        var content=WordSplitHelper.splitByParagraphs(fileName);
                                         // 将 SectionNode 转 Document 并保留 imageUrls 在 metadata
-                                        for (SectionNode s : sections) {
-                                            var text = (s.getTitle() == null ? "" : s.getTitle()) + "\n" + (s.getText() == null ? "" : s.getText());
+                                        var pNo=1;
+                                        for (String text : content) {
                                             var meta = new java.util.HashMap<String, Object>();
-                                            if (s.getImageUrls() != null && !s.getImageUrls().isEmpty()) meta.put("imageUrls", s.getImageUrls());
-                                            if (s.getSteps() != null && !s.getSteps().isEmpty()) meta.put("steps", s.getSteps());
-                                            meta.put("sectionId", s.getId());
-                                            meta.put("level", s.getLevel());
+                                            meta.put("paragraph", pNo);
+                                            meta.put("doc",fileName);
                                             var doc = new Document(text, meta);
                                             fileContent.add(doc);
+                                            pNo++;
                                         }
                                         sink.next(JacksonUtil
                                                 .toJsonString(new ConversationContext("【系统】已解析文件内容", conversationId))
@@ -206,6 +206,27 @@ public class ChatApi {
                                                 new ConversationContext("文件解析失败：" + e.getMessage(), conversationId))
                                                 .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                     }
+                                }
+                                if(pictureName!=null&&!pictureName.isEmpty()){
+                                    sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】正在解析图片内容...", conversationId))
+                                            .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
+                                    Mono<Document> captionDoc = multiModalService.captionImage(pictureName);
+                                    disposable[1] = captionDoc.defaultIfEmpty(new Document(""))
+                                            .flatMapMany(doc -> {
+                                                if (doc != null&&doc.getText()!=null&&!doc.getText().isEmpty()) {
+                                                    fileContent.add(doc);
+                                                    System.out.println("图片解析结果：" + doc.getText());
+                                                    sink.next(JacksonUtil.toJsonString(new ConversationContext("【系统】已解析图片内容", conversationId))
+                                                            .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
+                                                }
+                                                return streamingChatWithBaseKnowledge(message, topicId, fileContent, knowledge);
+                                            })
+                                            .doOnNext(chunk -> sink.next(JacksonUtil
+                                                    .toJsonString(new ConversationContext(chunk, conversationId))
+                                                    .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>"))
+                                            .doOnComplete(sink::complete)
+                                            .subscribe();
+                                    return;
                                 }
                                 disposable[1] = streamingChatWithBaseKnowledge(message, topicId, fileContent,knowledge)
                                         .doOnNext(chunk -> {
@@ -369,6 +390,9 @@ public class ChatApi {
                                 .similarityThreshold(0.8f)
                                 .topK(10)
                                 .build())));
+                    } else if (StringUtils.isBlank(knowledgeChosen)&&!fileContent.isEmpty()) {
+                        documents.addAll(fileContent);
+                        System.out.println("=======================单独添加");
                     } else {
                         for (String split : knowledge.split(",")) {
                             var vectorStore = vectorStoreFactory.createVectorStore(split, split, embeddingModel);
@@ -387,10 +411,11 @@ public class ChatApi {
                                 documents.addAll(topDocuments);
                             }
                         }
+                        if (!fileContent.isEmpty()) {
+                            documents.addAll(fileContent);
+                        }
                     }
-                    if (!fileContent.isEmpty()) {
-                        documents.addAll(fileContent);
-                    }
+                    System.out.println(documents.size());
                     return documents;
                 })
                 .subscribeOn(Schedulers.boundedElastic())
@@ -411,6 +436,7 @@ public class ChatApi {
 //                        promptBuilder.append("##你需要结合知识库作出合理、自然的回答\n");
                         promptBuilder.append("##如果知识库内容无法完全回答，可以补充常识。\n");
                         promptBuilder.append("##知识库内容如下：\n");
+                        System.out.println("后面"+documents.size());
                         for (Document doc : documents) {
                             promptBuilder.append("##").append(doc.getText()).append("\n");
                         }

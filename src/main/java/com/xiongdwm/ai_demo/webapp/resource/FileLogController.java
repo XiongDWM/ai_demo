@@ -108,7 +108,10 @@ public class FileLogController {
         File dest = new File(filePath);
         return file.transferTo(dest)
                 .then(Mono.fromCallable(() -> {
-                    return ApiResponse.success(filePath);
+                    var path=dest.getPath();
+                    if(path.contains("\\"))path=path.replace("\\", "/");
+                    System.out.println(path);
+                    return ApiResponse.success(path);
                 }))
                 .onErrorResume(e -> {
                     e.printStackTrace();
