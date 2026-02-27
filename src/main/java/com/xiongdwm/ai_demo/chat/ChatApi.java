@@ -489,7 +489,7 @@ public class ChatApi {
                 .append(message).append("\n")
                 .append("###SQL:\n");
         Prompt promptWithModelChose = new Prompt(prompt.toString(), ChatOptions.builder()
-                .model("qwen3:1.7b")
+                .model("qwen3:4b")
                 .build());
         return dashscopeChatModel.stream(promptWithModelChose)
                 .map(chatResp -> chatResp.getResult().getOutput().getText())
