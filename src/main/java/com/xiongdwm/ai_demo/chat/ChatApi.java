@@ -25,8 +25,7 @@ import com.xiongdwm.ai_demo.utils.global.ApiResponse;
 import com.xiongdwm.ai_demo.utils.global.GlobalPrompt;
 import com.xiongdwm.ai_demo.utils.global.WordSplitHelper;
 import com.xiongdwm.ai_demo.utils.global.HierarchicalWordSplitHelper;
-import com.xiongdwm.ai_demo.utils.global.SectionNode;
-import com.xiongdwm.ai_demo.ingest.ImageCaptionClient;
+import com.xiongdwm.ai_demo.embedding.ingest.ImageCaptionClient;
 import com.xiongdwm.ai_demo.utils.global.Neo4jIndexer;
 
 import io.micrometer.common.util.StringUtils;
@@ -377,7 +376,9 @@ public class ChatApi {
 
     private Flux<String> streamingChatWithBaseKnowledge(String message, String chatId, List<Document> fileContent,
             String knowledge) {
+        System.out.println("streamingChat:"+chatId);
         List<String> context = chatContextManager.getAllContextFromCache(chatId);
+        System.out.println(context);
 
         return Mono.fromCallable(() -> {
                     final List<Document> documents = new ArrayList<>();
@@ -387,19 +388,19 @@ public class ChatApi {
                         var vectorStore = vectorStoreFactory.createVectorStore("base_knowledge", "base_knowledge", embeddingModel);
                         documents.addAll(Objects.requireNonNull(vectorStore.similaritySearch(SearchRequest.builder()
                                 .query(message)
-                                .similarityThreshold(0.8f)
-                                .topK(10)
+                                .similarityThreshold(0.6f)
+                                .topK(12)
                                 .build())));
                     } else if (StringUtils.isBlank(knowledgeChosen)&&!fileContent.isEmpty()) {
                         documents.addAll(fileContent);
-                        System.out.println("=======================单独添加");
+                        System.out.println("=======================单独添加================");
                     } else {
                         for (String split : knowledge.split(",")) {
                             var vectorStore = vectorStoreFactory.createVectorStore(split, split, embeddingModel);
                             List<Document> searchResults = vectorStore.similaritySearch(SearchRequest.builder()
                                     .query(message)
-                                    .similarityThreshold(0.8f)
-                                    .topK(10)
+                                    .similarityThreshold(0.6f)
+                                    .topK(12)
                                     .build());
 
                             // 多个知识库知识重新排序
@@ -415,7 +416,6 @@ public class ChatApi {
                             documents.addAll(fileContent);
                         }
                     }
-                    System.out.println(documents.size());
                     return documents;
                 })
                 .subscribeOn(Schedulers.boundedElastic())
@@ -432,7 +432,7 @@ public class ChatApi {
                         context.forEach(promptBuilder::append);
                         promptBuilder.append("##如果上下文内容与这次问题无关，忽略上下文\n");
                     }
-                    if (!knowledge.isEmpty()) {
+                    if (!documents.isEmpty()) {
 //                        promptBuilder.append("##你需要结合知识库作出合理、自然的回答\n");
                         promptBuilder.append("##如果知识库内容无法完全回答，可以补充常识。\n");
                         promptBuilder.append("##知识库内容如下：\n");

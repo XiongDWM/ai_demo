@@ -1,8 +1,10 @@
 package com.xiongdwm.ai_demo.chat;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -77,7 +79,7 @@ public class AgentApi {
         @PostMapping("/agent/chat")
         public Flux<String> chat(@RequestParam(name = "message") String message,
                         @RequestHeader(value = "chat-id", required = false) String chatId) {
-                ToolCallback[] toolCallbacks = ToolCallbacks.from(fiberTool, embeddingTool, dataBaseTool);
+                List<ToolCallback> toolCallbacks = Arrays.stream(ToolCallbacks.from(fiberTool, embeddingTool, dataBaseTool)).toList();
                 StringBuilder sb = new StringBuilder();
                 sb.append("##你是一个智能体 \n");
                 sb.append("##系统会提供工具，必要时需要调用工具获取结果来回答用户的问题 \n");
@@ -92,9 +94,9 @@ public class AgentApi {
                 ChatModel chatModel = dashscopeChatModel;
                 String conversationId = chatId + "-" + System.currentTimeMillis();
 
-                ChatOptions chatOption = ToolCallingChatOptions.builder()
+                ChatOptions chatOption = DashScopeChatOptions.builder()
                                 // .model("qwen3:4b")
-                                .model("nemotron-mini:4b")
+                                .model("qwen3:14b")
                                 .toolCallbacks(toolCallbacks)
                                 .build();
                 Prompt prompt = new Prompt(sb.toString(), chatOption);

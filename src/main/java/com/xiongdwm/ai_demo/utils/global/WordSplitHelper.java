@@ -8,18 +8,35 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.xiongdwm.ai_demo.utils.excepotion.ServiceException;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFStyles;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.springframework.ai.document.Document;
 
 public class WordSplitHelper {
+    public record Chunk(
+            String content,
+            String file,
+            double weight,
+            int startPos,
+            int endPos,
+            int index
 
-    private final Map<Integer,Double> MAP_SYMBOL=PunctuationWeightEnum.getSymbolToValueAsKeyInInteger();
-    private final double MAS_WEIGHT=14.0;
-    private final int MAX_CHUNK_SIZE=300;
-    private final int MIN_CHUNK_SIZE=80;
+    ){
+        public Document toDocument(){
+            Map<String,Object> meta=Map.of("weight",weight,"index",index,"startPos",startPos,"endPos",endPos,"fileUnique",file);
+            return new Document(content,meta);
+        }
+
+    }
+
+    private static final Map<Integer,Double> MAP_SYMBOL=PunctuationWeightEnum.getSymbolToValueAsKeyInInteger();
+    private static final double MAX_WEIGHT=14.0;
+    private static final int MAX_CHUNK_SIZE=300;
+    private static final int MIN_CHUNK_SIZE=80;
 
     public record SplitCandidate(
             double weight,
@@ -56,15 +73,20 @@ public class WordSplitHelper {
         return chunks;
     }
 
-    public String getAllText(String filePath) throws Exception {
+    public static String getAllText(String filePath) throws Exception {
         StringBuilder text = new StringBuilder();
         XWPFDocument doc = new XWPFDocument(new FileInputStream(filePath));
         for (IBodyElement element : doc.getBodyElements()) {
             if (element instanceof XWPFParagraph paragraph) {
-                text.append(paragraph.getText()).append("\n");
+                if(paragraph.getText().trim().isEmpty())continue;
+                text.append(paragraph.getText().trim()).append("\n");
+            }
+            if(element instanceof XWPFTable table){
+                text.append(formatTable(table)).append("\n");
             }
         }
         doc.close();
+        if(text.isEmpty())throw new ServiceException("读取文档内容失败");
         return text.toString();
     }
 
@@ -79,9 +101,13 @@ public class WordSplitHelper {
                     rawParagraphs.add(text);
                 }
             }
+            if(element instanceof XWPFTable table){
+                var formattedTable = formatTable(table).trim();
+                rawParagraphs.add(formattedTable);
+            }
         }
         doc.close();
-
+        if(rawParagraphs.size()<=MAX_CHUNK_SIZE)return rawParagraphs;
         StringBuilder currentBlock = new StringBuilder();
         boolean inBlock = false;
         for (String line : rawParagraphs) {
@@ -103,20 +129,101 @@ public class WordSplitHelper {
         if (!currentBlock.isEmpty()) {
             result.add(currentBlock.toString().trim());
         }
+        System.out.println(result);
         return result;
     }
 
     //（需要按照符号对于每个chunk设置一个权合，按照权合来拆分文档内容）
-    public List<String>splitChunkByWeight(String filePath){
-        final int a=10;
-        // 应该是先byheadings，然后byParagraph，然后每段落再通过计算权值分成chunk。
-        // 拆分方式，获得这个candidatelist后逐个计算权值，然后达到阈值时查看是否为逗号（先做简单的，只看逗号或者句号），如果是，向前后找到句号，
-        // 与此同时，需要每次检查chunk是否超过max-chunk-size 或者低于min-chunk-size 如果是则需要向前减少或者向后补
-        // 另外循环外维护一个int，记录上一个句号在candidatelist中的下标，可以用的地方是向前缩进
-        // 各个chunk之间的overlap，
+    public static List<Chunk> splitChunkByWeight(String filePath) throws Exception {
+        List<Chunk> chunks = new ArrayList<>();
+        var uuid=java.util.UUID.randomUUID().toString();
+        String content = getAllText(filePath);
+        if (content.isEmpty()) return chunks;
 
-        return new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        double weightSum = 0;
+        int lastStrongEnd = -1;
+        int lastWeakEnd = -1;
+        int lastPuncEnd = -1;
+
+        int globalStart = 0;
+        int chunkIndex = 0;
+
+        for (int idx = 0; idx < content.length(); idx++) {
+            char ch = content.charAt(idx);
+            sb.append(ch);
+
+            double w = MAP_SYMBOL.getOrDefault((int) ch, 0d);
+            weightSum += w;
+
+            if ("。.!！?？".indexOf(ch) >= 0) {
+                lastStrongEnd = sb.length();
+                lastWeakEnd = -1;
+                lastPuncEnd = lastStrongEnd;
+            } else if ("，,、；;".indexOf(ch) >= 0) {
+                lastWeakEnd = sb.length();
+                lastPuncEnd = lastWeakEnd;
+            } else if ("：:".indexOf(ch) >= 0) {
+                lastPuncEnd = sb.length();
+            }
+
+            boolean reachMin = sb.length() >= MIN_CHUNK_SIZE;
+            boolean reachMaxWeight = weightSum >= MAX_WEIGHT;
+            if (reachMin && reachMaxWeight) {
+                int splitPos = sb.length();
+                boolean endsWithColon = sb.charAt(sb.length() - 1) == ':' || sb.charAt(sb.length() - 1) == '：';
+
+                if (endsWithColon && lastPuncEnd > 0 && lastPuncEnd < sb.length()) {
+                    splitPos = lastPuncEnd;
+                } else if (lastStrongEnd > 0) {
+                    splitPos = lastStrongEnd;
+                } else if (lastWeakEnd > 0) {
+                    splitPos = lastWeakEnd;
+                }
+
+                String head = sb.substring(0, splitPos).trim();
+                if (!head.isEmpty()) {
+                    int headEndGlobal = globalStart + splitPos;
+                    chunks.add(new Chunk(head, uuid,weightSum, globalStart, headEndGlobal, chunkIndex++));
+                    globalStart = headEndGlobal;
+                }
+
+                String tail = sb.substring(splitPos);
+                sb.setLength(0);
+                sb.append(tail);
+
+                weightSum = 0;
+                lastStrongEnd = -1;
+                lastWeakEnd = -1;
+                lastPuncEnd = -1;
+                for (int j = 0; j < sb.length(); j++) {
+                    char c = sb.charAt(j);
+                    weightSum += MAP_SYMBOL.getOrDefault((int) c, 0d);
+                    if ("。.!！?？".indexOf(c) >= 0) {
+                        lastStrongEnd = j + 1;
+                        lastWeakEnd = -1;
+                        lastPuncEnd = lastStrongEnd;
+                    } else if ("，,、；;".indexOf(c) >= 0) {
+                        lastWeakEnd = j + 1;
+                        lastPuncEnd = lastWeakEnd;
+                    } else if ("：:".indexOf(c) >= 0) {
+                        lastPuncEnd = j + 1;
+                    }
+                }
+            }
+        }
+
+        if (!sb.isEmpty()) {
+            String tail = sb.toString().trim();
+            if (!tail.isEmpty()) {
+                int endGlobal = globalStart + sb.length();
+                chunks.add(new Chunk(tail,uuid,weightSum, globalStart, endGlobal, chunkIndex));
+            }
+        }
+        return chunks;
     }
+
+
     public List<SplitCandidate> getSplitCandidateList(String context){
         List<SplitCandidate> candidates=new ArrayList<>();
         AtomicInteger i= new AtomicInteger();

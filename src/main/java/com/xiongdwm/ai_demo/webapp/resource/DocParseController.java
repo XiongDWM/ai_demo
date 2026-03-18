@@ -4,7 +4,7 @@ import java.util.List;
 
 import com.xiongdwm.ai_demo.utils.global.HierarchicalWordSplitHelper;
 import com.xiongdwm.ai_demo.utils.global.SectionNode;
-import com.xiongdwm.ai_demo.ingest.ImageCaptionClient;
+import com.xiongdwm.ai_demo.embedding.ingest.ImageCaptionClient;
 import com.xiongdwm.ai_demo.utils.global.ApiResponse;
 
 import org.springframework.beans.factory.annotation.Autowired;

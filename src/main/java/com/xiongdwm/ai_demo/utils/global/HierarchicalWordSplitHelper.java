@@ -1,6 +1,6 @@
 package com.xiongdwm.ai_demo.utils.global;
 
-import com.xiongdwm.ai_demo.ingest.ImageCaptionClient;
+import com.xiongdwm.ai_demo.embedding.ingest.ImageCaptionClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.poi.xwpf.usermodel.*;
 import org.springframework.beans.factory.annotation.Value;

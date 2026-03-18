@@ -1,4 +1,4 @@
-package com.xiongdwm.ai_demo.ingest;
+package com.xiongdwm.ai_demo.embedding.ingest;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

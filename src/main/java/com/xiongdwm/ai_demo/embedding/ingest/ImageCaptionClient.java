@@ -1,4 +1,4 @@
-package com.xiongdwm.ai_demo.ingest;
+package com.xiongdwm.ai_demo.embedding.ingest;
 
 import java.io.File;
 import java.io.IOException;

@@ -28,7 +28,7 @@ public class EmbeddingTool {
                 embeddingModel);
         List<Document> results = myVectorStore.similaritySearch(SearchRequest.builder()
                 .query(message)
-                .topK(18)
+                .topK(5)
                 .similarityThreshold(0.8f)
                 .build());
         System.out.println("description results: " + results.size());

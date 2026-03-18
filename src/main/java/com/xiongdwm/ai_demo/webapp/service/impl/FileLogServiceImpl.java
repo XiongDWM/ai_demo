@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
 import com.xiongdwm.ai_demo.webapp.entities.AiSysUser;
@@ -80,8 +81,12 @@ public class FileLogServiceImpl implements FileLogService{
 
     @Override
     public FileLog getByFilePath(String path) {
-        // TODO Auto-generated method stub
         return fileLogRepo.findOneByFilePath(path).orElse(null);
+    }
+
+    @Override
+    public FileLog getById(Long id) {
+        return fileLogRepo.findById(id).orElse(null);
     }
 
     @Override
@@ -91,8 +96,25 @@ public class FileLogServiceImpl implements FileLogService{
 
     @Override
     public boolean updateKnowledgeBaseInfo(KnowledgeBase knowledgeBase) {
+        var old=knowledgeBaseRepository.findById(knowledgeBase.getId()).orElse(null);
+        if(old==null)return false;
+        copyNonNullProps(knowledgeBase, old);
+        var userIds = knowledgeBase.getAuthorizedCharacter().split(",");
+        List<AiSysUser> users = new ArrayList<>();
+        for(String userIdString: userIds){
+            aiSysUserRepository.findById(Long.parseLong(userIdString)).ifPresent(users::add);
+        }
+        if(!users.isEmpty())knowledgeBase.setUserPermissions(users);
+
         knowledgeBaseRepository.saveAndFlush(knowledgeBase);
         return true;
+    }
+
+    private void copyNonNullProps(KnowledgeBase src, KnowledgeBase target) {
+        if (src.getName() != null) target.setName(src.getName());
+        if (src.getDescription() != null) target.setDescription(src.getDescription());
+        if (src.getTag() != null) target.setTag(src.getTag());
+        if (src.getAuthorizedCharacter() != null) target.setAuthorizedCharacter(src.getAuthorizedCharacter());
     }
 
 

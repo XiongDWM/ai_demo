@@ -20,7 +20,8 @@ public interface FileLogService {
 
     void emitKnowledgeBaseUpdate();
 
-    FileLog getByFilePath(String path); 
+    FileLog getByFilePath(String path);
+    FileLog getById(Long id);
     
     KnowledgeBase getKnowledgeBaseByTag(String tag);
 

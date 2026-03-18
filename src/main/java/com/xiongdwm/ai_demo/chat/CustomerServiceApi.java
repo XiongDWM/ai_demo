@@ -2,8 +2,8 @@ package com.xiongdwm.ai_demo.chat;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.xiongdwm.ai_demo.ingest.CustomerServiceGraphService;
-import com.xiongdwm.ai_demo.ingest.EmbeddingService;
+import com.xiongdwm.ai_demo.embedding.ingest.CustomerServiceGraphService;
+import com.xiongdwm.ai_demo.embedding.ingest.EmbeddingService;
 import com.xiongdwm.ai_demo.utils.JacksonUtil;
 import com.xiongdwm.ai_demo.utils.global.*;
 import com.xiongdwm.ai_demo.webapp.entities.FileLog;
@@ -112,8 +112,8 @@ public class CustomerServiceApi {
      * 将指定路径的客服手册解析（层级+步骤+图片），写入 customer_service 向量库，并构建图谱。
      */
     @PostMapping("/customer-service/embedding/byDocPath")
-    public ApiResponse<String> buildCustomerServiceEmbedding(@RequestParam("path") String path) {
-        FileLog fileLog = fileLogService.getByFilePath(path);
+    public ApiResponse<String> buildCustomerServiceEmbedding(@RequestParam("path") String path,@RequestParam("logId")Long logId) {
+        FileLog fileLog = fileLogService.getById(logId);
         if (fileLog == null) return ApiResponse.error("未找到对应文件，请先上传手册。");
         KnowledgeBase knowledgeBase = fileLog.getKnowledgeBase();
         if (knowledgeBase == null || !CUSTOMER_SERVICE_TAG.equalsIgnoreCase(knowledgeBase.getTag())) {

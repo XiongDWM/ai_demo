@@ -87,8 +87,8 @@ public class FileLogController {
     }
 
     @PostMapping("/fileLog/getFileByPath")
-    public ResponseEntity<Resource> getFileByPath(@RequestParam String filePath) {
-        FileLog fileLog = fileLogService.getByFilePath(filePath);
+    public ResponseEntity<Resource> getFileByPath(@RequestParam("filePath") String filePath,@RequestParam("logId")Long logId) {
+        FileLog fileLog = fileLogService.getById(logId);
         if (fileLog == null) {
             return ResponseEntity.notFound().build();
         }

@@ -1,4 +1,4 @@
-package com.xiongdwm.ai_demo.ingest;
+package com.xiongdwm.ai_demo.embedding.ingest;
 
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
 import com.xiongdwm.ai_demo.utils.excepotion.ServiceException;

@@ -5,7 +5,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import com.xiongdwm.ai_demo.ingest.EmbeddingService;
+import com.xiongdwm.ai_demo.embedding.ingest.EmbeddingService;
 import com.xiongdwm.ai_demo.utils.global.ExcelParser;
 import com.xiongdwm.ai_demo.webapp.entities.FAQ;
 import com.xiongdwm.ai_demo.webapp.service.FAQService;
@@ -13,7 +13,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingResponse;
-import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -34,7 +33,6 @@ import com.xiongdwm.ai_demo.webapp.entities.KnowledgeBase;
 import com.xiongdwm.ai_demo.webapp.service.FileLogService;
 
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 @RestController
@@ -94,9 +92,11 @@ public class EmbeddingApi {
     }
 
     @PostMapping("/embedding/byDocPath")
-    public Mono<ApiResponse<String>> getEmbeddingByDocPath(@RequestParam("path") String path) {
+    //@RequestParam("path") String path,
+    public Mono<ApiResponse<String>> getEmbeddingByDocPath(@RequestParam("logId")Long logId) {
+        System.out.println(1);
         return Mono.fromCallable(()->{
-            FileLog fileLog = fileLogService.getByFilePath(path);
+            FileLog fileLog = fileLogService.getById(logId);
             if(fileLog == null) return ApiResponse.error("File not found for the given path.");
             try {
                 KnowledgeBase knowledgeBase = fileLog.getKnowledgeBase();
@@ -107,18 +107,17 @@ public class EmbeddingApi {
                 if(StringUtils.isBlank(tag.trim())) {
                     return ApiResponse.error("Knowledge base tag is empty or whitespace only.");
                 }
-                List<String> list = WordSplitHelper.splitByParagraphs(path);
+                List<WordSplitHelper.Chunk> list = WordSplitHelper.splitChunkByWeight(fileLog.getFilePath());
                 VectorStore myVectorStore = vectorStoreFactory.createVectorStore(tag, tag,
                         embeddingModel);
                 var sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-                var date = sdf.format(new Date());
                 List<Document> documents = list.parallelStream()
-                        .map(text -> new Document(text, Map.of("date",date))).collect(Collectors.toList());
-                System.out.println("documents: "+documents.size());
+                        .map(WordSplitHelper.Chunk::toDocument).collect(Collectors.toList());
                 myVectorStore.add(documents);
                 fileLog.setProcessingState(FileLog.ProcessingState.COMPLETED);
                 fileLogService.saveFileLog(fileLog);
             } catch (Exception e) {
+                System.out.println(e.getLocalizedMessage());
                 fileLog.setProcessingState(FileLog.ProcessingState.FAILED);
                 fileLogService.saveFileLog(fileLog);
                 return ApiResponse.error("Error processing file: " + e.getLocalizedMessage());
@@ -211,9 +210,12 @@ public class EmbeddingApi {
 
     @PostMapping(value = "/embedding/upload", consumes = "multipart/form-data", produces = "application/json")
     public Mono<ApiResponse<String>> upload(@RequestPart("file") FilePart filePart,@RequestParam("knowledgeBaseId")Long knowledgeBaseId,@RequestHeader("Authorization") String token) {
-        String filePath = uploadPath + File.separator + filePart.filename();
+        var timemillis=System.currentTimeMillis();
+        String filePath = uploadPath + File.separator+"-"+timemillis + filePart.filename();
         String subfix= filePart.filename().substring(filePart.filename().lastIndexOf(".")+1).toLowerCase();
-        if(!subfix.equals("doc")&&!subfix.equals("docx"))return Mono.just(ApiResponse.error("目前只支持doc和docx格式的文件"));
+        if(subfix.equals("doc"))return Mono.just(ApiResponse.error("请转存成docx后上传，doc版本太旧"));
+        if(subfix.equals("xlsx") || subfix.equals("xls")||subfix.equals("cvs")||subfix.equals("et"))return Mono.just(ApiResponse.error("暂不支持表格"));
+
         FileLog fileLog = new FileLog();
         String username = token.split("-")[0];
 //        fileLog.setId(0L);
@@ -238,6 +240,4 @@ public class EmbeddingApi {
                     return Mono.just(ApiResponse.error());
                 });
     }
-
-
 }
