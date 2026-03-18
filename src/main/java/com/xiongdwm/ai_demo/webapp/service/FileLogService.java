@@ -24,8 +24,7 @@ public interface FileLogService {
     FileLog getById(Long id);
     
     KnowledgeBase getKnowledgeBaseByTag(String tag);
-
+    KnowledgeBase getKnowledgeBaseById(Long id);
     boolean updateKnowledgeBaseInfo(KnowledgeBase knowledgeBase);
-
 
 }

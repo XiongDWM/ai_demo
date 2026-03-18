@@ -1,4 +1,4 @@
-package com.xiongdwm.ai_demo.tools;
+package com.xiongdwm.ai_demo.utils;
 
 import org.springframework.lang.Nullable;
 

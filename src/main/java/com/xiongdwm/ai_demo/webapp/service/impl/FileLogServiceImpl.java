@@ -93,6 +93,10 @@ public class FileLogServiceImpl implements FileLogService{
     public KnowledgeBase getKnowledgeBaseByTag(String tag) {
         return knowledgeBaseRepository.findOneByTag(tag).orElse(null);
     }
+    @Override
+    public KnowledgeBase getKnowledgeBaseById(Long id) {
+        return knowledgeBaseRepository.findById(id).orElse(null);
+    }
 
     @Override
     public boolean updateKnowledgeBaseInfo(KnowledgeBase knowledgeBase) {
