@@ -15,11 +15,11 @@ public class GlobalExceptionHandler {
     
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    @ExceptionHandler(Exception.class)
-    public ApiResponse<String> handleException(Exception e) {
-        logger.error("Global Exception Handler: ", e.getLocalizedMessage());
-        return ApiResponse.error(e.getLocalizedMessage());
-    }
+    // @ExceptionHandler(Exception.class)
+    // public ApiResponse<String> handleException(Exception e) {
+    //     logger.error("Global Exception Handler: ", e.getLocalizedMessage());
+    //     return ApiResponse.error(e.getLocalizedMessage());
+    // }
 
     @ExceptionHandler(ServiceException.class)
     public ApiResponse<String> handleServiceException(ServiceException e) {

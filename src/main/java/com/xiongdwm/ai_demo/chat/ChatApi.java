@@ -30,6 +30,8 @@ import com.xiongdwm.ai_demo.utils.global.SectionNode;
 import com.xiongdwm.ai_demo.ingest.ImageCaptionClient;
 import com.xiongdwm.ai_demo.utils.global.Neo4jIndexer;
 
+import com.xiongdwm.ai_demo.utils.global.ExcelParseHelper;
+
 import io.micrometer.common.util.StringUtils;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -56,6 +58,8 @@ public class ChatApi {
     private Neo4jIndexer neo4jIndexer;
     @Autowired
     private HierarchicalWordSplitHelper hierarchicalWordSplitHelper;
+    @Autowired
+    private ExcelParseHelper excelParseHelper;
 
     @PostMapping("/streaming/chat/baseKnowledge")
     public Flux<String> sinkFlux(@RequestParam("message") String message,
@@ -180,19 +184,25 @@ public class ChatApi {
                                             .toJsonString(new ConversationContext("【系统】正在解析文件内容...", conversationId))
                                             .orElse(ConversationContext.getEmptyContextJsonString()) + "</chunk>");
                                     try {
-                                        // 使用分层拆分器实例方法，保持标题-子项结构并提取图片
-                                        var sections = hierarchicalWordSplitHelper.parseHierarchy(fileName,
-                                                "upload/images", imageCaptionClient, 1200);
-                                        // 将 SectionNode 转 Document 并保留 imageUrls 在 metadata
-                                        for (SectionNode s : sections) {
-                                            var text = (s.getTitle() == null ? "" : s.getTitle()) + "\n" + (s.getText() == null ? "" : s.getText());
-                                            var meta = new java.util.HashMap<String, Object>();
-                                            if (s.getImageUrls() != null && !s.getImageUrls().isEmpty()) meta.put("imageUrls", s.getImageUrls());
-                                            if (s.getSteps() != null && !s.getSteps().isEmpty()) meta.put("steps", s.getSteps());
-                                            meta.put("sectionId", s.getId());
-                                            meta.put("level", s.getLevel());
-                                            var doc = new Document(text, meta);
-                                            fileContent.add(doc);
+                                        if (ExcelParseHelper.isExcelFile(fileName)) {
+                                            // Excel 文件：按行结构化解析，每行保留 "列名: 值" 格式
+                                            var excelDocs = excelParseHelper.parseExcel(fileName);
+                                            fileContent.addAll(excelDocs);
+                                        } else {
+                                            // Word 等文档：使用分层拆分器，保持标题-子项结构并提取图片
+                                            var sections = hierarchicalWordSplitHelper.parseHierarchy(fileName,
+                                                    "upload/images", imageCaptionClient, 1200);
+                                            // 将 SectionNode 转 Document 并保留 imageUrls 在 metadata
+                                            for (SectionNode s : sections) {
+                                                var text = (s.getTitle() == null ? "" : s.getTitle()) + "\n" + (s.getText() == null ? "" : s.getText());
+                                                var meta = new java.util.HashMap<String, Object>();
+                                                if (s.getImageUrls() != null && !s.getImageUrls().isEmpty()) meta.put("imageUrls", s.getImageUrls());
+                                                if (s.getSteps() != null && !s.getSteps().isEmpty()) meta.put("steps", s.getSteps());
+                                                meta.put("sectionId", s.getId());
+                                                meta.put("level", s.getLevel());
+                                                var doc = new Document(text, meta);
+                                                fileContent.add(doc);
+                                            }
                                         }
                                         sink.next(JacksonUtil
                                                 .toJsonString(new ConversationContext("【系统】已解析文件内容", conversationId))

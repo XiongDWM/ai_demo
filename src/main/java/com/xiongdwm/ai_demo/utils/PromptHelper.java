@@ -1,6 +1,5 @@
-package com.xiongdwm.ai_demo.tools;
+package com.xiongdwm.ai_demo.utils;
 
-import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 

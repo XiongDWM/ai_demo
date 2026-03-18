@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
 import com.xiongdwm.ai_demo.utils.global.ApiResponse;
+import com.xiongdwm.ai_demo.utils.global.ExcelParseHelper;
 import com.xiongdwm.ai_demo.utils.global.WordSplitHelper;
 import com.xiongdwm.ai_demo.webapp.entities.FileLog;
 import com.xiongdwm.ai_demo.webapp.entities.KnowledgeBase;
@@ -51,6 +52,8 @@ public class EmbeddingApi {
     private EmbeddingService embeddingService;
     @Autowired
     private FAQService faqService;
+    @Autowired
+    private ExcelParseHelper excelParseHelper;
 
 
     @Value("${file.upload.path}")
@@ -196,6 +199,119 @@ public class EmbeddingApi {
                     e.printStackTrace();
                     return Mono.just(ApiResponse.error());
                 });
+    }
+
+    /**
+     * Excel 文件上传并向量化入库。
+     * 每 8 行数据作为一个 Document 写入向量库，保留 "列名: 值" 的结构化格式。
+     */
+    @PostMapping(value = "/embedding/uploadExcel", consumes = "multipart/form-data", produces = "application/json")
+    public Mono<ApiResponse<String>> uploadExcel(@RequestPart("file") FilePart filePart,
+                                                 @RequestParam("knowledgeBaseId") Long knowledgeBaseId,
+                                                 @RequestHeader("Authorization") String token) {
+        String fileName = filePart.filename();
+        if (!ExcelParseHelper.isExcelFile(fileName)) {
+            return Mono.just(ApiResponse.error("仅支持 .xlsx 和 .xls 格式的 Excel 文件"));
+        }
+
+        String filePath = uploadPath + File.separator + fileName;
+        FileLog fileLog = new FileLog();
+        String username = token.split("-")[0];
+        fileLog.setId(0L);
+        fileLog.setFileName(fileName);
+        fileLog.setFilePath(filePath);
+        fileLog.setUploadTime(new Date());
+        fileLog.setKnowledgeBaseId(knowledgeBaseId);
+        fileLog.setFaculty(username);
+        fileLogService.saveFileLog(fileLog);
+
+        File dest = new File(filePath);
+        return filePart.transferTo(dest)
+                .then(Mono.fromCallable(() -> {
+                    // 使用 8 行分块解析 Excel
+                    List<Document> documents = excelParseHelper.parseExcel(filePath, ExcelParseHelper.EMBEDDING_ROWS_PER_CHUNK);
+                    if (documents.isEmpty()) {
+                        fileLog.setProcessingState(FileLog.ProcessingState.FAILED);
+                        fileLogService.saveFileLog(fileLog);
+                        return ApiResponse.error("Excel 文件内容为空，无法入库");
+                    }
+
+                    // 获取知识库 tag 作为向量索引名
+                    KnowledgeBase kb = fileLogService.getKnowledgeBaseById(knowledgeBaseId);
+                    if (kb == null || StringUtils.isBlank(kb.getTag())) {
+                        fileLog.setProcessingState(FileLog.ProcessingState.FAILED);
+                        fileLogService.saveFileLog(fileLog);
+                        return ApiResponse.error("未找到关联的知识库或知识库 tag 为空");
+                    }
+                    String tag = kb.getTag().trim();
+
+                    // 为每个 document 补充日期元数据
+                    var sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                    var date = sdf.format(new Date());
+                    for (Document doc : documents) {
+                        doc.getMetadata().put("date", date);
+                        doc.getMetadata().put("fileName", fileName);
+                    }
+
+                    // 写入向量库
+                    VectorStore vectorStore = vectorStoreFactory.createVectorStore(tag, tag, embeddingModel);
+                    vectorStore.add(documents);
+                    System.out.println("Excel 向量入库完成，共 " + documents.size() + " 个分块");
+
+                    fileLog.setProcessingState(FileLog.ProcessingState.COMPLETED);
+                    fileLogService.saveFileLog(fileLog);
+                    return ApiResponse.success("Excel 入库成功，共 " + documents.size() + " 个分块");
+                }))
+                .subscribeOn(Schedulers.boundedElastic())
+                .onErrorResume(e -> {
+                    e.printStackTrace();
+                    fileLog.setProcessingState(FileLog.ProcessingState.FAILED);
+                    fileLogService.saveFileLog(fileLog);
+                    return Mono.just(ApiResponse.error("Excel 入库失败：" + e.getMessage()));
+                });
+    }
+
+    /**
+     * 通过已上传的 Excel 文件路径进行向量化入库（与 /embedding/byDocPath 类似）。
+     */
+    @PostMapping("/embedding/byExcelPath")
+    public ApiResponse<String> embeddingByExcelPath(@RequestParam("path") String path) {
+        FileLog fileLog = fileLogService.getByFilePath(path);
+        if (fileLog == null) return ApiResponse.error("未找到该文件记录");
+        try {
+            KnowledgeBase knowledgeBase = fileLog.getKnowledgeBase();
+            if (knowledgeBase == null) {
+                return ApiResponse.error("未找到关联的知识库");
+            }
+            String tag = knowledgeBase.getTag();
+            if (StringUtils.isBlank(tag)) {
+                return ApiResponse.error("知识库 tag 为空");
+            }
+            tag = tag.trim();
+
+            List<Document> documents = excelParseHelper.parseExcel(path, ExcelParseHelper.EMBEDDING_ROWS_PER_CHUNK);
+            if (documents.isEmpty()) {
+                return ApiResponse.error("Excel 文件内容为空");
+            }
+
+            var sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            var date = sdf.format(new Date());
+            for (Document doc : documents) {
+                doc.getMetadata().put("date", date);
+            }
+
+            VectorStore vectorStore = vectorStoreFactory.createVectorStore(tag, tag, embeddingModel);
+            vectorStore.add(documents);
+            System.out.println("Excel byPath 向量入库完成，共 " + documents.size() + " 个分块");
+
+            fileLog.setProcessingState(FileLog.ProcessingState.COMPLETED);
+            fileLogService.saveFileLog(fileLog);
+        } catch (Exception e) {
+            fileLog.setProcessingState(FileLog.ProcessingState.FAILED);
+            fileLogService.saveFileLog(fileLog);
+            return ApiResponse.error("Excel 入库失败：" + e.getMessage());
+        }
+        return ApiResponse.success("Excel 入库成功");
     }
 
 }
