@@ -108,9 +108,9 @@ public class FileLogServiceImpl implements FileLogService{
         for(String userIdString: userIds){
             aiSysUserRepository.findById(Long.parseLong(userIdString)).ifPresent(users::add);
         }
-        if(!users.isEmpty())knowledgeBase.setUserPermissions(users);
+        if(!users.isEmpty())old.setUserPermissions(users);
 
-        knowledgeBaseRepository.saveAndFlush(knowledgeBase);
+        knowledgeBaseRepository.saveAndFlush(old);
         return true;
     }
 

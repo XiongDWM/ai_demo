@@ -1,5 +1,6 @@
 package com.xiongdwm.ai_demo.embedding.ingest;
 
+import com.xiongdwm.ai_demo.embedding.ingest.strategy.HybridSearchStrategy;
 import com.xiongdwm.ai_demo.utils.config.Neo4jVectorStoreFactory;
 import com.xiongdwm.ai_demo.utils.excepotion.ServiceException;
 import com.xiongdwm.ai_demo.utils.global.ExcelParser;
@@ -18,13 +19,20 @@ import java.util.*;
 @Service
 public class EmbeddingService {
 
-    @Autowired
-    @Qualifier("ollamaEmbedding")
-    private EmbeddingModel embeddingModel;
-    @Autowired
-    private Neo4jVectorStoreFactory vectorStoreFactory;
-    @Resource
-    private CustomerServiceGraphService customerGraphService;
+    private final EmbeddingModel embeddingModel;
+    private final Neo4jVectorStoreFactory vectorStoreFactory;
+    private final CustomerServiceGraphService customerGraphService;
+    private final HybridSearchStrategy hybridSearchStrategy;
+
+    public EmbeddingService(@Qualifier("ollamaEmbedding") EmbeddingModel embeddingModel,
+                            Neo4jVectorStoreFactory vectorStoreFactory,
+                            HybridSearchStrategy hybridSearchStrategy,
+                            CustomerServiceGraphService customerGraphService) {
+        this.embeddingModel = embeddingModel;
+        this.vectorStoreFactory = vectorStoreFactory;
+        this.customerGraphService = customerGraphService;
+        this.hybridSearchStrategy = hybridSearchStrategy;
+    }
 
     public boolean createIndex(String index, String label, int dimension, String property, String similarity) {
         try {
@@ -46,6 +54,14 @@ public class EmbeddingService {
                 .similarityThreshold(threshold)
                 .topK(topK)
                 .build());
+    }
+
+    public List<Document> hybridSearch(String queryText,String indexPrefix,float confidenceText,float confidenceVector, int topK) {
+        if(confidenceVector+confidenceText>1)throw new IllegalArgumentException("confidence cannot surplus than 1");
+        var queryVector=embeddingModel.embed(queryText);
+        var fulltextIndex=indexPrefix+"_fulltext";
+        var vectorIndex=indexPrefix+"_vector";
+        return hybridSearchStrategy.hybridSearch(queryText,queryVector,fulltextIndex,vectorIndex,confidenceText,confidenceVector, topK);
     }
 
     public String docResult2Prompt(String heading,List<Document> documents){

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -18,6 +19,7 @@ import org.springframework.ai.ollama.api.OllamaApi;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
@@ -63,6 +65,9 @@ public class AgentApi {
 
         @Autowired
         private OllamaChatModel ollamaChatModel;
+        @Autowired
+        @Qualifier("dashscopeChat")
+        private ChatModel dashscopeChatModel;
 
         @Value("${file.upload.path}")
         private String uploadPath;
@@ -367,15 +372,13 @@ public class AgentApi {
                     agentPrompt.append("##用户问题：\n").append(message).append("\n");
                     System.out.println(agentPrompt.toString());
 
-                    ChatModel chatModel = OllamaChatModel.builder()
-                            .ollamaApi(OllamaApi.builder().build()).build();
-                    ChatOptions opts = ToolCallingChatOptions.builder()
-                            .model("qwen3:4b")
-                            .toolCallbacks(toolCallbacks)
+                    DashScopeChatOptions options=DashScopeChatOptions.builder()
+                            .model("qwen3.5-flash")
+                            .toolCallbacks(List.of(toolCallbacks))
                             .build();
-
-                    String toolResult = ChatClient.create(chatModel)
-                            .prompt(new Prompt(agentPrompt.toString(), opts))
+                    var prompt=new Prompt(agentPrompt.toString(), options);
+                    String toolResult = ChatClient.create(dashscopeChatModel)
+                            .prompt(prompt)
                             .call().content();
                             System.out.println("Agent 原始工具调用结果: " + toolResult);
 
